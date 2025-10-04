@@ -25,12 +25,12 @@ import {
 } from '@mui/material';
 import {
   Save,
-  Cancel,
+  X,
   CheckCircle,
   XCircle,
   Edit,
-  Add,
-  Delete,
+  Plus,
+  Trash2,
   FileText,
   Eye,
   AlertTriangle,
@@ -401,7 +401,7 @@ const InvoiceReviewDialog = ({ open, onClose, invoice, onUpdate }) => {
                 </Typography>
                 {editMode && (
                   <Button
-                    startIcon={<Add size={16} />}
+                    startIcon={<Plus size={16} />}
                     onClick={addLineItem}
                     size="small"
                     variant="outlined"
@@ -489,7 +489,7 @@ const InvoiceReviewDialog = ({ open, onClose, invoice, onUpdate }) => {
                               onClick={() => removeLineItem(index)}
                               color="error"
                             >
-                              <Delete size={16} />
+                              <Trash2 size={16} />
                             </IconButton>
                           </TableCell>
                         )}
@@ -513,7 +513,7 @@ const InvoiceReviewDialog = ({ open, onClose, invoice, onUpdate }) => {
             <Button 
               onClick={() => setEditMode(false)} 
               disabled={saving}
-              startIcon={<Cancel size={16} />}
+              startIcon={<X size={16} />}
             >
               Cancel Edit
             </Button>
