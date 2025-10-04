@@ -65,22 +65,36 @@ class ClaudeService {
    */
   parseClaudeResponse(responseText) {
     try {
-      // Remove any markdown formatting that Claude might add
+      console.log('🔍 Raw Claude response (first 1000 chars):', responseText.substring(0, 1000));
+      
+      // Remove any markdown formatting and explanatory text that Claude might add
       let cleanedResponse = responseText
         .replace(/```json/g, '')
         .replace(/```/g, '')
         .trim();
 
+      // Find the JSON object - look for the first { and last }
+      const firstBrace = cleanedResponse.indexOf('{');
+      const lastBrace = cleanedResponse.lastIndexOf('}');
+      
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1);
+      }
+
+      console.log('🔍 Cleaned response (first 500 chars):', cleanedResponse.substring(0, 500));
+
       const parsed = JSON.parse(cleanedResponse);
       
       // Validate required structure
       if (!parsed.invoice_header || !parsed.line_items) {
+        console.error('❌ Missing required structure. Got keys:', Object.keys(parsed));
         throw new Error('Invalid response structure from Claude');
       }
 
       return parsed;
     } catch (error) {
-      console.error('❌ Failed to parse Claude response:', responseText.substring(0, 500));
+      console.error('❌ Failed to parse Claude response. Full response:', responseText);
+      console.error('❌ Parse error:', error.message);
       throw new Error('Failed to parse Claude response as JSON');
     }
   }

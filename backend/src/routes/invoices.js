@@ -134,8 +134,45 @@ router.post('/upload', authenticateToken, uploadSingle('invoice'), async (req, r
 
     const vendor = vendorResult.rows[0];
 
-    // Get vendor's extraction prompt
-    let extractionPrompt = 'Use the default extraction prompt.'; // Default fallback
+    // Get vendor's extraction prompt or use structured default
+    let extractionPrompt = `Please extract invoice data from the following document and return ONLY a valid JSON object with this exact structure:
+
+{
+  "invoice_header": {
+    "invoice_number": "string",
+    "customer_name": "string", 
+    "invoice_date": "YYYY-MM-DD",
+    "due_date": "YYYY-MM-DD",
+    "issue_date": "YYYY-MM-DD",
+    "service_period_start": "YYYY-MM-DD",
+    "service_period_end": "YYYY-MM-DD",
+    "currency": "USD",
+    "amount_due": 0.00,
+    "total_amount": 0.00,
+    "subtotal": 0.00,
+    "total_taxes": 0.00,
+    "total_fees": 0.00,
+    "purchase_order_number": "string",
+    "payment_terms": "string",
+    "customer_account_number": "string",
+    "contact_email": "string",
+    "contact_phone": "string"
+  },
+  "line_items": [
+    {
+      "line_number": 1,
+      "description": "string",
+      "category": "string",
+      "charge_type": "recurring|one_time|usage",
+      "quantity": 1,
+      "unit_price": 0.00,
+      "total_amount": 0.00
+    }
+  ]
+}
+
+Return ONLY the JSON object, no explanation or markdown formatting.`;
+
     if (vendor.extraction_prompt_id) {
       const promptResult = await query(
         'SELECT prompt_text FROM extraction_prompts WHERE id = $1 AND is_active = true',
