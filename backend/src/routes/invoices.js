@@ -77,14 +77,14 @@ router.get('/', authenticateToken, async (req, res) => {
         i.*,
         v.name as vendor_name,
         v.display_name as vendor_display_name,
-        c.name as customer_name,
+        COALESCE(c.name, i.customer_name) as customer_name,
         COUNT(li.id) as line_item_count
       FROM invoices i
       LEFT JOIN vendors v ON i.vendor_id = v.id
       LEFT JOIN customers c ON i.customer_id = c.id
       LEFT JOIN line_items li ON i.id = li.invoice_id
       ${whereClause}
-      GROUP BY i.id, v.name, v.display_name, c.name
+      GROUP BY i.id, v.name, v.display_name, c.name, i.customer_name
       ORDER BY i.created_at DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
@@ -333,7 +333,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
         i.*,
         v.name as vendor_name,
         v.display_name as vendor_display_name,
-        c.name as customer_name
+        COALESCE(c.name, i.customer_name) as customer_name
       FROM invoices i
       LEFT JOIN vendors v ON i.vendor_id = v.id
       LEFT JOIN customers c ON i.customer_id = c.id
@@ -423,6 +423,165 @@ router.put('/:id/reject', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('❌ Error rejecting invoice:', error);
     res.status(500).json({ error: 'Failed to reject invoice' });
+  }
+});
+
+// GET /api/invoices/:id/file - Serve uploaded document file
+router.get('/:id/file', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get invoice file path
+    const invoiceResult = await query(
+      'SELECT file_path, file_type, original_filename FROM invoices WHERE id = $1',
+      [id]
+    );
+
+    if (invoiceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const invoice = invoiceResult.rows[0];
+    
+    if (!invoice.file_path) {
+      return res.status(404).json({ error: 'Invoice file not found' });
+    }
+
+    // Check if file exists
+    const fs = require('fs');
+    if (!fs.existsSync(invoice.file_path)) {
+      return res.status(404).json({ error: 'Invoice file no longer exists on disk' });
+    }
+
+    // Set appropriate content type
+    if (invoice.file_type === 'PDF') {
+      res.setHeader('Content-Type', 'application/pdf');
+    } else if (invoice.file_type === 'HTML') {
+      res.setHeader('Content-Type', 'text/html');
+    }
+
+    // Set filename for download
+    res.setHeader('Content-Disposition', `inline; filename="${invoice.original_filename}"`);
+    
+    // Serve the file
+    res.sendFile(invoice.file_path, (err) => {
+      if (err) {
+        console.error('❌ Error serving file:', err);
+        res.status(500).json({ error: 'Failed to serve file' });
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error serving invoice file:', error);
+    res.status(500).json({ error: 'Failed to serve invoice file' });
+  }
+});
+
+// PUT /api/invoices/:id/update - Update invoice data after review
+router.put('/:id/update', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoice_header, line_items } = req.body;
+
+    const updatedInvoice = await transaction(async (client) => {
+      // Update invoice header
+      const updateInvoiceQuery = `
+        UPDATE invoices SET 
+          invoice_number = $1,
+          customer_name = $2,
+          invoice_date = $3,
+          due_date = $4,
+          issue_date = $5,
+          currency = $6,
+          amount_due = $7,
+          total_amount = $8,
+          subtotal = $9,
+          total_taxes = $10,
+          total_fees = $11,
+          purchase_order_number = $12,
+          payment_terms = $13,
+          customer_account_number = $14,
+          contact_email = $15,
+          contact_phone = $16,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $17
+        RETURNING *
+      `;
+
+      const invoiceResult = await client.query(updateInvoiceQuery, [
+        invoice_header.invoice_number,
+        invoice_header.customer_name,
+        invoice_header.invoice_date,
+        invoice_header.due_date,
+        invoice_header.issue_date,
+        invoice_header.currency || 'USD',
+        invoice_header.amount_due,
+        invoice_header.total_amount,
+        invoice_header.subtotal,
+        invoice_header.total_taxes,
+        invoice_header.total_fees,
+        invoice_header.purchase_order_number,
+        invoice_header.payment_terms,
+        invoice_header.customer_account_number,
+        invoice_header.contact_email,
+        invoice_header.contact_phone,
+        id
+      ]);
+
+      if (invoiceResult.rows.length === 0) {
+        throw new Error('Invoice not found');
+      }
+
+      // Delete existing line items
+      await client.query('DELETE FROM line_items WHERE invoice_id = $1', [id]);
+
+      // Insert updated line items
+      if (line_items && line_items.length > 0) {
+        for (const lineItem of line_items) {
+          const lineItemQuery = `
+            INSERT INTO line_items (
+              invoice_id, line_number, description, category, charge_type,
+              quantity, unit_of_measure, unit_price, subtotal, tax_amount, 
+              fee_amount, total_amount, sku, product_code
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          `;
+
+          await client.query(lineItemQuery, [
+            id,
+            lineItem.line_number || 1,
+            lineItem.description,
+            lineItem.category,
+            lineItem.charge_type || 'one_time',
+            lineItem.quantity || 1,
+            lineItem.unit_of_measure,
+            lineItem.unit_price,
+            lineItem.subtotal,
+            lineItem.tax_amount,
+            lineItem.fee_amount,
+            lineItem.total_amount,
+            lineItem.sku,
+            lineItem.product_code
+          ]);
+        }
+      }
+
+      return invoiceResult.rows[0];
+    });
+
+    console.log(`✅ Invoice updated: ${updatedInvoice.invoice_number}`);
+
+    res.json({
+      message: 'Invoice updated successfully',
+      invoice: updatedInvoice
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating invoice:', error);
+    if (error.message === 'Invoice not found') {
+      res.status(404).json({ error: 'Invoice not found' });
+    } else {
+      res.status(500).json({ error: 'Failed to update invoice' });
+    }
   }
 });
 
