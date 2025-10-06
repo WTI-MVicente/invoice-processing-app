@@ -34,11 +34,24 @@ import {
   FileText,
   Eye,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
 
-const InvoiceReviewDialog = ({ open, onClose, invoice, onUpdate }) => {
+const InvoiceReviewDialog = ({ 
+  open, 
+  onClose, 
+  invoice, 
+  onUpdate, 
+  onApprove, 
+  onReject, 
+  onNavigateNext, 
+  onNavigatePrevious, 
+  hasNext = false, 
+  hasPrevious = false 
+}) => {
   const [editableInvoice, setEditableInvoice] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -78,8 +91,9 @@ const InvoiceReviewDialog = ({ open, onClose, invoice, onUpdate }) => {
         })) || []
       });
       
-      // Set file URL for document viewer
-      setFileUrl(`/api/invoices/${invoice.id}/file`);
+      // Set file URL for document viewer (use full backend URL with auth token)
+      const token = localStorage.getItem('token');
+      setFileUrl(`http://localhost:5001/api/invoices/${invoice.id}/file?token=${token}`);
     }
   }, [invoice]);
 
@@ -197,22 +211,32 @@ const InvoiceReviewDialog = ({ open, onClose, invoice, onUpdate }) => {
   };
 
   const handleApprove = async () => {
-    try {
-      await axios.put(`/api/invoices/${invoice.id}/approve`);
-      onUpdate?.();
-      onClose();
-    } catch (err) {
-      setError('Failed to approve invoice');
+    if (onApprove) {
+      onApprove(invoice.id, true); // Auto-advance by default
+    } else {
+      // Fallback to original behavior
+      try {
+        await axios.put(`/api/invoices/${invoice.id}/approve`);
+        onUpdate?.();
+        onClose();
+      } catch (err) {
+        setError('Failed to approve invoice');
+      }
     }
   };
 
   const handleReject = async () => {
-    try {
-      await axios.put(`/api/invoices/${invoice.id}/reject`);
-      onUpdate?.();
-      onClose();
-    } catch (err) {
-      setError('Failed to reject invoice');
+    if (onReject) {
+      onReject(invoice.id, ''); // Empty reason for now
+    } else {
+      // Fallback to original behavior
+      try {
+        await axios.put(`/api/invoices/${invoice.id}/reject`);
+        onUpdate?.();
+        onClose();
+      } catch (err) {
+        setError('Failed to reject invoice');
+      }
     }
   };
 
@@ -504,8 +528,38 @@ const InvoiceReviewDialog = ({ open, onClose, invoice, onUpdate }) => {
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onClose} disabled={saving}>
+        <Button 
+          variant="outlined"
+          onClick={onClose} 
+          disabled={saving}
+          startIcon={<X size={16} />}
+        >
           Close
+        </Button>
+
+        {/* Navigation buttons */}
+        <Button
+          variant="outlined"
+          onClick={() => {
+            console.log('Back clicked, hasPrevious:', hasPrevious);
+            onNavigatePrevious?.();
+          }}
+          disabled={!hasPrevious || saving}
+          startIcon={<ChevronLeft size={16} />}
+          sx={{ ml: 1 }}
+        >
+          Back
+        </Button>
+        <Button
+          variant="outlined"
+          onClick={() => {
+            console.log('Next clicked, hasNext:', hasNext);
+            onNavigateNext?.();
+          }}
+          disabled={!hasNext || saving}
+          startIcon={<ChevronRight size={16} />}
+        >
+          Next
         </Button>
         
         {editMode ? (

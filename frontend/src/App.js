@@ -7,6 +7,7 @@ import { theme } from './theme/theme';
 import Layout from './components/Layout/Layout';
 import ImportPage from './pages/ImportPage';
 import ReviewPage from './pages/ReviewPage';
+import InvoicesPage from './pages/InvoicesPage';
 import VendorsPage from './pages/VendorsPage';
 import CustomersPage from './pages/CustomersPage';
 import PromptsPage from './pages/PromptsPage';
@@ -30,6 +31,7 @@ function App() {
               <Route index element={<ImportPage />} />
               <Route path="import" element={<ImportPage />} />
               <Route path="review" element={<ReviewPage />} />
+              <Route path="invoices" element={<InvoicesPage />} />
               <Route path="vendors" element={<VendorsPage />} />
               <Route path="customers" element={<CustomersPage />} />
               <Route path="prompts" element={<PromptsPage />} />

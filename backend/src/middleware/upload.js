@@ -141,14 +141,51 @@ const getFileType = (filename) => {
   return 'UNKNOWN';
 };
 
-// Helper function to read uploaded file content
+// Helper function to read uploaded file content using pdf-text-extract
 const readFileContent = async (filePath) => {
   try {
-    const content = await fs.readFile(filePath, 'utf8');
-    return content;
+    const extension = path.extname(filePath).toLowerCase();
+    
+    if (extension === '.pdf') {
+      // Read PDF file and extract text using pdf-parse (following implementation guide)
+      console.log('📖 Reading PDF content with pdf-parse...');
+      const pdf = require('pdf-parse');
+      
+      // Read file as buffer
+      const dataBuffer = await fs.readFile(filePath);
+      
+      // Parse PDF
+      const pdfData = await pdf(dataBuffer);
+      
+      // Extract text content
+      const textContent = pdfData.text;
+      
+      if (!textContent || textContent.trim().length === 0) {
+        throw new Error('PDF appears to be empty or could not extract text');
+      }
+      
+      console.log(`📄 Extracted ${textContent.length} characters from PDF (${pdfData.numpages} pages)`);
+      return textContent.trim();
+      
+    } else if (extension === '.html' || extension === '.htm') {
+      // Read HTML file as text
+      console.log('📖 Reading HTML content...');
+      const content = await fs.readFile(filePath, 'utf8');
+      
+      if (!content || content.trim().length === 0) {
+        throw new Error('HTML file appears to be empty');
+      }
+      
+      console.log(`📄 Read ${content.length} characters from HTML`);
+      return content;
+      
+    } else {
+      throw new Error(`Unsupported file type: ${extension}`);
+    }
+    
   } catch (error) {
     console.error('❌ Error reading file:', error);
-    throw new Error('Failed to read uploaded file');
+    throw new Error(`Failed to read uploaded file: ${error.message}`);
   }
 };
 

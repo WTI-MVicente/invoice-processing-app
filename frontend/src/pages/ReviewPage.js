@@ -37,6 +37,7 @@ import {
   Download,
   TrendingUp,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
@@ -51,7 +52,7 @@ const ReviewPage = () => {
   
   // Filters and pagination
   const [filters, setFilters] = useState({
-    status: '',
+    status: 'none', // Default to showing no items
     vendor: '',
     search: '',
     dateRange: 'all'
@@ -73,9 +74,37 @@ const ReviewPage = () => {
     loadInvoices();
   }, [filters, page, rowsPerPage]);
 
+  // Auto-switch to "processed" status when there are pending reviews and currently on "none"
+  useEffect(() => {
+    if (filters.status === 'none' && stats.pending > 0) {
+      console.log(`Found ${stats.pending} pending reviews, auto-switching to "processed" status`);
+      setFilters(prev => ({ ...prev, status: 'processed' }));
+    }
+  }, [stats.pending, filters.status]);
+
   const loadInvoices = async () => {
     try {
       setLoading(true);
+      
+      // If status is 'none', show empty table
+      if (filters.status === 'none') {
+        setInvoices([]);
+        // Still load stats for the summary cards
+        const statsResponse = await axios.get('/api/invoices');
+        const totalInvoices = statsResponse.data.invoices;
+        setStats({
+          total: totalInvoices.length,
+          pending: totalInvoices.filter(inv => inv.processing_status === 'processed').length,
+          approved: totalInvoices.filter(inv => inv.processing_status === 'approved').length,
+          rejected: totalInvoices.filter(inv => inv.processing_status === 'rejected').length,
+          avgConfidence: totalInvoices.length > 0 
+            ? (totalInvoices.reduce((sum, inv) => sum + (inv.confidence_score || 0), 0) / totalInvoices.length * 100).toFixed(1)
+            : 0
+        });
+        setLoading(false);
+        return;
+      }
+
       const params = new URLSearchParams({
         limit: rowsPerPage,
         offset: page * rowsPerPage,
@@ -122,11 +151,22 @@ const ReviewPage = () => {
     }
   };
 
-  const handleApprove = async (invoiceId) => {
+  const handleApprove = async (invoiceId, autoAdvance = true) => {
     try {
       await axios.put(`/api/invoices/${invoiceId}/approve`);
       loadInvoices(); // Refresh list
-      setDetailDialogOpen(false);
+      
+      if (autoAdvance) {
+        // Auto-advance to next pending invoice
+        const nextInvoice = getNextPendingInvoice();
+        if (nextInvoice) {
+          handleViewInvoice(nextInvoice);
+        } else {
+          setDetailDialogOpen(false);
+        }
+      } else {
+        setDetailDialogOpen(false);
+      }
     } catch (err) {
       console.error('Failed to approve invoice:', err);
       setError('Failed to approve invoice');
@@ -142,6 +182,71 @@ const ReviewPage = () => {
       console.error('Failed to reject invoice:', err);
       setError('Failed to reject invoice');
     }
+  };
+
+  // Navigation helper functions
+  const getPendingInvoices = () => {
+    console.log('All invoice statuses:', invoices.map(inv => ({id: inv.id, status: inv.status, processing_status: inv.processing_status})));
+    const pendingInvoices = invoices.filter(invoice => 
+      invoice.processing_status === 'processed' && !invoice.approved_at && !invoice.rejected_at
+    );
+    console.log('Pending invoices for review:', pendingInvoices.length, 'Total invoices:', invoices.length);
+    return pendingInvoices;
+  };
+
+  const getCurrentInvoiceIndex = () => {
+    if (!selectedInvoice) return -1;
+    const pendingInvoices = getPendingInvoices();
+    return pendingInvoices.findIndex(invoice => invoice.id === selectedInvoice.id);
+  };
+
+  const getNextPendingInvoice = () => {
+    const pendingInvoices = getPendingInvoices();
+    const currentIndex = getCurrentInvoiceIndex();
+    if (currentIndex >= 0 && currentIndex < pendingInvoices.length - 1) {
+      return pendingInvoices[currentIndex + 1];
+    }
+    return null;
+  };
+
+  const getPreviousPendingInvoice = () => {
+    const pendingInvoices = getPendingInvoices();
+    const currentIndex = getCurrentInvoiceIndex();
+    if (currentIndex > 0) {
+      return pendingInvoices[currentIndex - 1];
+    }
+    return null;
+  };
+
+  const handleNavigateNext = () => {
+    const nextInvoice = getNextPendingInvoice();
+    if (nextInvoice) {
+      handleViewInvoice(nextInvoice);
+    }
+  };
+
+  const handleNavigatePrevious = () => {
+    const previousInvoice = getPreviousPendingInvoice();
+    if (previousInvoice) {
+      handleViewInvoice(previousInvoice);
+    }
+  };
+
+  const handleClearInvoices = () => {
+    console.log('Clear view clicked');
+    // Clear the view by resetting filters and reloading
+    setFilters({
+      search: '',
+      status: 'none', // Reset to default "none" status
+      vendor: '',
+      dateRange: 'all'
+    });
+    setPage(0);
+    setRowsPerPage(10);
+    // Force reload of invoices
+    setTimeout(() => {
+      loadInvoices();
+    }, 100);
   };
 
   const getStatusChip = (status) => {
@@ -189,7 +294,7 @@ const ReviewPage = () => {
     <Box>
       {/* Header */}
       <Box display="flex" alignItems="center" gap={2} mb={3}>
-        <Eye size={32} color="#1B4B8C" />
+        <CheckCircle size={32} color="#1B4B8C" />
         <Typography variant="h4">
           Review & Approve
         </Typography>
@@ -264,7 +369,7 @@ const ReviewPage = () => {
           <Typography variant="h6">Filters</Typography>
         </Box>
         <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2.4}>
             <TextField
               fullWidth
               placeholder="Search invoices..."
@@ -275,7 +380,7 @@ const ReviewPage = () => {
               }}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2.4}>
             <FormControl fullWidth>
               <InputLabel>Status</InputLabel>
               <Select
@@ -283,6 +388,7 @@ const ReviewPage = () => {
                 label="Status"
                 onChange={(e) => handleFilterChange('status', e.target.value)}
               >
+                <MenuItem value="none">-- Select Status --</MenuItem>
                 <MenuItem value="">All Status</MenuItem>
                 <MenuItem value="processed">Pending Review</MenuItem>
                 <MenuItem value="approved">Approved</MenuItem>
@@ -290,7 +396,7 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2.4}>
             <FormControl fullWidth>
               <InputLabel>Vendor</InputLabel>
               <Select
@@ -304,7 +410,7 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2.4}>
             <FormControl fullWidth>
               <InputLabel>Date Range</InputLabel>
               <Select
@@ -318,6 +424,18 @@ const ReviewPage = () => {
                 <MenuItem value="month">This Month</MenuItem>
               </Select>
             </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={2.4}>
+            <Button
+              variant="outlined"
+              startIcon={<Trash2 size={16} />}
+              onClick={handleClearInvoices}
+              color="warning"
+              fullWidth
+              sx={{ height: '56px' }} // Match the height of Select components
+            >
+              Clear View
+            </Button>
           </Grid>
         </Grid>
       </Paper>
@@ -430,6 +548,26 @@ const ReviewPage = () => {
         onClose={() => setDetailDialogOpen(false)}
         invoice={selectedInvoice}
         onUpdate={loadInvoices}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onNavigateNext={() => {
+          console.log('Navigate next called');
+          handleNavigateNext();
+        }}
+        onNavigatePrevious={() => {
+          console.log('Navigate previous called');
+          handleNavigatePrevious();
+        }}
+        hasNext={(() => {
+          const hasNext = getNextPendingInvoice() !== null;
+          console.log('hasNext:', hasNext, 'Next invoice:', getNextPendingInvoice()?.invoice_number);
+          return hasNext;
+        })()}
+        hasPrevious={(() => {
+          const hasPrev = getPreviousPendingInvoice() !== null;
+          console.log('hasPrevious:', hasPrev, 'Previous invoice:', getPreviousPendingInvoice()?.invoice_number);
+          return hasPrev;
+        })()}
       />
     </Box>
   );

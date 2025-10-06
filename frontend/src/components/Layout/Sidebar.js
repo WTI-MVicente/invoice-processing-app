@@ -17,12 +17,14 @@ import {
   Users,
   Code,
   Download,
+  Database,
 } from 'lucide-react';
 import { brandColors } from '../../theme/theme';
 
 const menuItems = [
   { key: 'import', label: 'Import Invoices', icon: Upload, path: '/import' },
   { key: 'review', label: 'Review & Approve', icon: CheckCircle, path: '/review' },
+  { key: 'invoices', label: 'Invoices', icon: Database, path: '/invoices' },
   { key: 'vendors', label: 'Vendors', icon: Building2, path: '/vendors' },
   { key: 'customers', label: 'Customers', icon: Users, path: '/customers' },
   { key: 'prompts', label: 'Prompts', icon: Code, path: '/prompts' },
