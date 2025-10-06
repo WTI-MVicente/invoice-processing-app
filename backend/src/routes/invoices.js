@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const { query, transaction } = require('../config/database');
 const { uploadSingle, uploadMultiple, getFileType, readFileContent, deleteFile } = require('../middleware/upload');
 const claudeService = require('../services/claudeService');
@@ -77,14 +78,14 @@ router.get('/', authenticateToken, async (req, res) => {
         i.*,
         v.name as vendor_name,
         v.display_name as vendor_display_name,
-        c.name as customer_name,
+        COALESCE(c.name, i.customer_name) as customer_name,
         COUNT(li.id) as line_item_count
       FROM invoices i
       LEFT JOIN vendors v ON i.vendor_id = v.id
       LEFT JOIN customers c ON i.customer_id = c.id
       LEFT JOIN line_items li ON i.id = li.invoice_id
       ${whereClause}
-      GROUP BY i.id, v.name, v.display_name, c.name
+      GROUP BY i.id, v.name, v.display_name, c.name, i.customer_name
       ORDER BY i.created_at DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
@@ -135,12 +136,20 @@ router.post('/upload', authenticateToken, uploadSingle('invoice'), async (req, r
     const vendor = vendorResult.rows[0];
 
     // Get vendor's extraction prompt or use structured default
-    let extractionPrompt = `Please extract invoice data from the following document and return ONLY a valid JSON object with this exact structure:
+    let extractionPrompt = `I need you to extract structured data from this invoice document. Please analyze the following invoice and return the information in the exact JSON format specified.
 
+CRITICAL INSTRUCTIONS:
+1. Return ONLY valid JSON - no other text before or after
+2. Extract the EXACT invoice number from the document - do not make up numbers
+3. Use actual text from the document for all descriptions and fields
+4. Be thorough - missing data reduces accuracy
+5. For numbers, use only digits with decimals (no $ symbols or commas)
+
+REQUIRED JSON FORMAT:
 {
   "invoice_header": {
-    "invoice_number": "string",
-    "customer_name": "string", 
+    "invoice_number": "exact number from document",
+    "customer_name": "actual customer name from document", 
     "invoice_date": "YYYY-MM-DD",
     "due_date": "YYYY-MM-DD",
     "issue_date": "YYYY-MM-DD",
@@ -161,7 +170,7 @@ router.post('/upload', authenticateToken, uploadSingle('invoice'), async (req, r
   "line_items": [
     {
       "line_number": 1,
-      "description": "string",
+      "description": "exact text from invoice",
       "category": "string",
       "charge_type": "recurring|one_time|usage",
       "quantity": 1,
@@ -169,9 +178,7 @@ router.post('/upload', authenticateToken, uploadSingle('invoice'), async (req, r
       "total_amount": 0.00
     }
   ]
-}
-
-Return ONLY the JSON object, no explanation or markdown formatting.`;
+}`;
 
     if (vendor.extraction_prompt_id) {
       const promptResult = await query(
@@ -333,7 +340,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
         i.*,
         v.name as vendor_name,
         v.display_name as vendor_display_name,
-        c.name as customer_name
+        COALESCE(c.name, i.customer_name) as customer_name
       FROM invoices i
       LEFT JOIN vendors v ON i.vendor_id = v.id
       LEFT JOIN customers c ON i.customer_id = c.id
@@ -423,6 +430,243 @@ router.put('/:id/reject', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('❌ Error rejecting invoice:', error);
     res.status(500).json({ error: 'Failed to reject invoice' });
+  }
+});
+
+// GET /api/invoices/:id/file - Serve uploaded document file
+router.get('/:id/file', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🔍 File request for invoice ID: ${id}`);
+    
+    // Check authentication (header or query parameter for iframe requests)
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication token required' });
+    }
+    
+    try {
+      jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    // Get invoice file path
+    const invoiceResult = await query(
+      'SELECT file_path, file_type, original_filename FROM invoices WHERE id = $1',
+      [id]
+    );
+
+    if (invoiceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const invoice = invoiceResult.rows[0];
+    console.log(`📁 Invoice file path: ${invoice.file_path}`);
+    
+    if (!invoice.file_path) {
+      console.log('❌ No file path found in database');
+      return res.status(404).json({ error: 'Invoice file not found' });
+    }
+
+    // Check if file exists
+    const fs = require('fs');
+    if (!fs.existsSync(invoice.file_path)) {
+      console.log(`❌ File does not exist on disk: ${invoice.file_path}`);
+      return res.status(404).json({ error: 'Invoice file no longer exists on disk' });
+    }
+    console.log(`✅ File exists, serving: ${invoice.original_filename}`);
+
+    // Set appropriate content type and allow iframe embedding
+    if (invoice.file_type === 'PDF') {
+      res.setHeader('Content-Type', 'application/pdf');
+    } else if (invoice.file_type === 'HTML') {
+      res.setHeader('Content-Type', 'text/html');
+    }
+    
+    // Allow iframe embedding from frontend
+    res.setHeader('X-Frame-Options', 'ALLOWALL');
+    res.setHeader('Content-Security-Policy', 'frame-ancestors http://localhost:3000');
+    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+
+    // Set filename for download
+    res.setHeader('Content-Disposition', `inline; filename="${invoice.original_filename}"`);
+    
+    // Serve the file
+    res.sendFile(invoice.file_path, (err) => {
+      if (err) {
+        console.error('❌ Error serving file:', err);
+        res.status(500).json({ error: 'Failed to serve file' });
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error serving invoice file:', error);
+    res.status(500).json({ error: 'Failed to serve invoice file' });
+  }
+});
+
+// PUT /api/invoices/:id/update - Update invoice data after review
+router.put('/:id/update', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoice_header, line_items } = req.body;
+
+    const updatedInvoice = await transaction(async (client) => {
+      // Update invoice header
+      const updateInvoiceQuery = `
+        UPDATE invoices SET 
+          invoice_number = $1,
+          customer_name = $2,
+          invoice_date = $3,
+          due_date = $4,
+          issue_date = $5,
+          currency = $6,
+          amount_due = $7,
+          total_amount = $8,
+          subtotal = $9,
+          total_taxes = $10,
+          total_fees = $11,
+          purchase_order_number = $12,
+          payment_terms = $13,
+          customer_account_number = $14,
+          contact_email = $15,
+          contact_phone = $16,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $17
+        RETURNING *
+      `;
+
+      const invoiceResult = await client.query(updateInvoiceQuery, [
+        invoice_header.invoice_number,
+        invoice_header.customer_name,
+        invoice_header.invoice_date,
+        invoice_header.due_date,
+        invoice_header.issue_date,
+        invoice_header.currency || 'USD',
+        invoice_header.amount_due,
+        invoice_header.total_amount,
+        invoice_header.subtotal,
+        invoice_header.total_taxes,
+        invoice_header.total_fees,
+        invoice_header.purchase_order_number,
+        invoice_header.payment_terms,
+        invoice_header.customer_account_number,
+        invoice_header.contact_email,
+        invoice_header.contact_phone,
+        id
+      ]);
+
+      if (invoiceResult.rows.length === 0) {
+        throw new Error('Invoice not found');
+      }
+
+      // Delete existing line items
+      await client.query('DELETE FROM line_items WHERE invoice_id = $1', [id]);
+
+      // Insert updated line items
+      if (line_items && line_items.length > 0) {
+        for (const lineItem of line_items) {
+          const lineItemQuery = `
+            INSERT INTO line_items (
+              invoice_id, line_number, description, category, charge_type,
+              quantity, unit_of_measure, unit_price, subtotal, tax_amount, 
+              fee_amount, total_amount, sku, product_code
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          `;
+
+          await client.query(lineItemQuery, [
+            id,
+            lineItem.line_number || 1,
+            lineItem.description,
+            lineItem.category,
+            lineItem.charge_type || 'one_time',
+            lineItem.quantity || 1,
+            lineItem.unit_of_measure,
+            lineItem.unit_price,
+            lineItem.subtotal,
+            lineItem.tax_amount,
+            lineItem.fee_amount,
+            lineItem.total_amount,
+            lineItem.sku,
+            lineItem.product_code
+          ]);
+        }
+      }
+
+      return invoiceResult.rows[0];
+    });
+
+    console.log(`✅ Invoice updated: ${updatedInvoice.invoice_number}`);
+
+    res.json({
+      message: 'Invoice updated successfully',
+      invoice: updatedInvoice
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating invoice:', error);
+    if (error.message === 'Invoice not found') {
+      res.status(404).json({ error: 'Invoice not found' });
+    } else {
+      res.status(500).json({ error: 'Failed to update invoice' });
+    }
+  }
+});
+
+// DELETE /api/invoices/:id - Permanently delete invoice and all related data
+router.delete('/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🗑️ Permanently deleting invoice ID: ${id}`);
+
+    // Get invoice file path before deletion
+    const invoiceResult = await query(
+      'SELECT file_path, invoice_number, original_filename FROM invoices WHERE id = $1',
+      [id]
+    );
+
+    if (invoiceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const invoice = invoiceResult.rows[0];
+    const filePath = invoice.file_path;
+
+    // Delete from database (cascade should handle line_items)
+    await transaction(async (client) => {
+      // Delete line items first
+      await client.query('DELETE FROM line_items WHERE invoice_id = $1', [id]);
+      
+      // Delete invoice
+      await client.query('DELETE FROM invoices WHERE id = $1', [id]);
+      
+      console.log(`🗄️ Deleted invoice ${invoice.invoice_number} from database`);
+    });
+
+    // Delete file from filesystem
+    if (filePath) {
+      try {
+        await deleteFile(filePath);
+        console.log(`📁 Deleted file: ${invoice.original_filename}`);
+      } catch (fileError) {
+        console.warn(`⚠️ Could not delete file ${filePath}:`, fileError.message);
+        // Don't fail the request if file deletion fails
+      }
+    }
+
+    res.json({ 
+      message: 'Invoice permanently deleted',
+      deleted_invoice: {
+        id,
+        invoice_number: invoice.invoice_number,
+        original_filename: invoice.original_filename
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error permanently deleting invoice:', error);
+    res.status(500).json({ error: 'Failed to delete invoice' });
   }
 });
 

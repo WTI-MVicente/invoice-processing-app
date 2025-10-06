@@ -100,7 +100,16 @@ const ImportPage = () => {
       
     } catch (err) {
       console.error('Upload failed:', err);
-      const message = err.response?.data?.error || 'Upload failed';
+      let message = 'Upload failed';
+      
+      if (err.response?.status === 409) {
+        message = err.response.data.error + ' (Duplicate invoice detected)';
+      } else if (err.response?.status === 502) {
+        message = 'AI processing failed. Please check the document format and try again.';
+      } else if (err.response?.data?.error) {
+        message = err.response.data.error;
+      }
+      
       setError(message);
     } finally {
       setUploading(false);
