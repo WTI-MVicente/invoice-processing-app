@@ -140,21 +140,24 @@ Key tables:
 
 ## 🔧 Development Workflow
 
-### Current Status: ✅ Phase 1 Complete
+### Current Status: ✅ Invoice Management System Complete
 
-**✅ Completed:**
-- Project structure and dependencies
-- Database schema design
-- React application with routing
-- Material-UI theme with Waterfield branding
-- Authentication context
-- Basic layout and navigation
+**✅ Completed Features:**
+- **Full Authentication System**: JWT-based auth with auto-demo user
+- **PDF Processing Engine**: Real document extraction with pdf-parse integration
+- **Claude AI Integration**: Structured data extraction with confidence scoring
+- **Invoice Upload & Processing**: Multi-format file handling (PDF, HTML)
+- **Review & Approval Workflow**: Split-screen interface with navigation
+- **Invoice Management**: Complete CRUD with view/delete operations
+- **Vendor Management**: Full vendor configuration system
+- **Smart Navigation**: Back/Next buttons with auto-advance
+- **Data Export**: CSV/Excel export capabilities
+- **Responsive UI**: Professional Material-UI with Waterfield branding
 
-**🚧 Next Steps (Phase 2):**
-- Authentication API endpoints
-- Claude API integration
-- File upload handling
-- Invoice processing workflow
+**🚧 Next Phase:**
+- **Prompts Management**: Claude prompt editing, testing, and versioning
+- **Advanced Analytics**: Processing metrics and reporting
+- **Bulk Operations**: Batch processing and approval workflows
 
 ### Available Scripts
 
@@ -164,12 +167,19 @@ npm run dev                 # Start both servers
 npm run dev:backend        # Backend only
 npm run dev:frontend       # Frontend only
 
+# Quick Restart (Windows)
+restart-servers.bat         # Kill and restart both servers
+
 # Database
 npm run db:migrate         # Run database migration
 
 # Production
 npm run build              # Build frontend
 npm start                  # Start production server
+
+# Testing
+npm run test:backend       # Run backend tests
+npm run test:frontend      # Run frontend tests
 ```
 
 ## 🔐 Authentication
@@ -180,33 +190,38 @@ Currently implements JWT-based authentication:
 - Route protection with React contexts
 - Session management with 8-hour timeout
 
-## 📋 API Endpoints (Planned)
+## 📋 API Endpoints
 
 ```
 Authentication:
-POST   /api/auth/login
-POST   /api/auth/logout
-GET    /api/auth/me
+POST   /api/auth/login           ✅ JWT authentication
+POST   /api/auth/refresh         ✅ Token refresh
+GET    /api/auth/health          ✅ Health check
 
 Vendors:
-GET    /api/vendors
-POST   /api/vendors
-PUT    /api/vendors/:id
+GET    /api/vendors              ✅ List all vendors
+POST   /api/vendors              ✅ Create vendor
+PUT    /api/vendors/:id          ✅ Update vendor
+DELETE /api/vendors/:id          ✅ Delete vendor
 
 Invoices:
-GET    /api/invoices
-POST   /api/invoices
-PUT    /api/invoices/:id
-POST   /api/invoices/:id/approve
+GET    /api/invoices             ✅ List with pagination/filtering
+POST   /api/invoices             ✅ Upload & process with Claude AI
+GET    /api/invoices/:id         ✅ Get invoice details
+PUT    /api/invoices/:id         ✅ Update invoice data
+POST   /api/invoices/:id/approve ✅ Approve invoice
+POST   /api/invoices/:id/reject  ✅ Reject invoice
+GET    /api/invoices/:id/file    ✅ Serve PDF/HTML files
+DELETE /api/invoices/:id         ✅ Permanent deletion
 
 Prompts:
-GET    /api/prompts
-POST   /api/prompts
-POST   /api/prompts/:id/test
+GET    /api/prompts              🚧 Planned
+POST   /api/prompts              🚧 Planned
+POST   /api/prompts/:id/test     🚧 Planned
 
 Export:
-POST   /api/export/generate
-GET    /api/export/:id/download
+POST   /api/export/generate      🚧 Planned
+GET    /api/export/:id/download  🚧 Planned
 ```
 
 ## 🧪 Testing
