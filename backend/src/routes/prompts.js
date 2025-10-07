@@ -164,25 +164,29 @@ router.post('/', authenticateToken, async (req, res) => {
       parent_prompt_id = null
     } = req.body;
 
+    // Sanitize inputs - convert empty strings to null for UUID fields
+    const sanitizedVendorId = vendor_id === '' ? null : vendor_id;
+    const sanitizedParentPromptId = parent_prompt_id === '' ? null : parent_prompt_id;
+
     // Validation
     if (!prompt_name || !prompt_text) {
       return res.status(400).json({ error: 'prompt_name and prompt_text are required' });
     }
 
     // If setting as active, deactivate other prompts for the same vendor
-    if (is_active && vendor_id) {
+    if (is_active && sanitizedVendorId) {
       await query(
         'UPDATE extraction_prompts SET is_active = false WHERE vendor_id = $1 AND is_active = true',
-        [vendor_id]
+        [sanitizedVendorId]
       );
     }
 
     // Determine version number
     let version = 1;
-    if (parent_prompt_id) {
+    if (sanitizedParentPromptId) {
       const versionResult = await query(
         'SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM extraction_prompts WHERE parent_prompt_id = $1 OR id = $1',
-        [parent_prompt_id]
+        [sanitizedParentPromptId]
       );
       version = versionResult.rows[0].next_version;
     }
@@ -198,11 +202,11 @@ router.post('/', authenticateToken, async (req, res) => {
     const values = [
       prompt_name,
       prompt_text,
-      vendor_id,
+      sanitizedVendorId,
       is_template,
       is_active,
       version,
-      parent_prompt_id,
+      sanitizedParentPromptId,
       req.user.email || 'system'
     ];
 
@@ -237,6 +241,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
       is_active
     } = req.body;
 
+    // Sanitize inputs - convert empty strings to null for UUID fields
+    const sanitizedVendorId = vendor_id === '' ? null : vendor_id;
+
     // Get current prompt
     const currentResult = await query('SELECT * FROM extraction_prompts WHERE id = $1', [id]);
     if (currentResult.rows.length === 0) {
@@ -246,10 +253,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
     const currentPrompt = currentResult.rows[0];
 
     // If setting as active, deactivate other prompts for the same vendor
-    if (is_active && vendor_id) {
+    if (is_active && sanitizedVendorId) {
       await query(
         'UPDATE extraction_prompts SET is_active = false WHERE vendor_id = $1 AND is_active = true AND id != $2',
-        [vendor_id, id]
+        [sanitizedVendorId, id]
       );
     }
 
@@ -266,7 +273,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       RETURNING *
     `;
 
-    const values = [prompt_name, prompt_text, vendor_id, is_template, is_active, id];
+    const values = [prompt_name, prompt_text, sanitizedVendorId, is_template, is_active, id];
     const result = await query(sql, values);
 
     console.log(`✅ Updated prompt: ${result.rows[0].prompt_name}`);
