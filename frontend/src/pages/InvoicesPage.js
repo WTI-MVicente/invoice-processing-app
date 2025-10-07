@@ -29,6 +29,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Checkbox,
 } from '@mui/material';
 import {
   CheckCircle,
@@ -49,6 +50,7 @@ import { format, parseISO } from 'date-fns';
 
 const InvoicesPage = () => {
   const [invoices, setInvoices] = useState([]);
+  const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -56,6 +58,7 @@ const InvoicesPage = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [selectedInvoices, setSelectedInvoices] = useState(new Set());
 
   // Filters and pagination
   const [filters, setFilters] = useState({
@@ -77,6 +80,11 @@ const InvoicesPage = () => {
   useEffect(() => {
     loadInvoices();
   }, [filters, page, rowsPerPage]);
+
+  // Load vendors once on component mount
+  useEffect(() => {
+    loadVendors();
+  }, []);
 
   const loadInvoices = async () => {
     try {
@@ -109,6 +117,16 @@ const InvoicesPage = () => {
     }
   };
 
+  const loadVendors = async () => {
+    try {
+      const response = await axios.get('/api/vendors');
+      setVendors(response.data.vendors || []);
+    } catch (err) {
+      console.error('Failed to load vendors:', err);
+      // Don't set error for vendors, it's not critical
+    }
+  };
+
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(0); // Reset to first page when filtering
@@ -131,22 +149,31 @@ const InvoicesPage = () => {
   };
 
   const confirmDelete = async () => {
-    if (!invoiceToDelete) return;
-
     try {
       setDeleting(true);
-      await axios.delete(`/api/invoices/${invoiceToDelete.id}`);
+      
+      if (invoiceToDelete) {
+        // Single invoice delete
+        await axios.delete(`/api/invoices/${invoiceToDelete.id}`);
+        console.log(`Invoice ${invoiceToDelete.invoice_number} deleted successfully`);
+      } else if (selectedInvoices.size > 0) {
+        // Bulk delete
+        const deletePromises = Array.from(selectedInvoices).map(id => 
+          axios.delete(`/api/invoices/${id}`)
+        );
+        await Promise.all(deletePromises);
+        console.log(`${selectedInvoices.size} invoices deleted successfully`);
+        setSelectedInvoices(new Set());
+      }
       
       // Refresh the list
-      loadInvoices();
+      await loadInvoices();
       setDeleteDialogOpen(false);
       setInvoiceToDelete(null);
       
-      // Show success message
-      console.log(`Invoice ${invoiceToDelete.invoice_number} deleted successfully`);
     } catch (err) {
-      console.error('Failed to delete invoice:', err);
-      setError('Failed to delete invoice');
+      console.error('Failed to delete invoice(s):', err);
+      setError('Failed to delete invoice(s). Some invoices may have been deleted.');
     } finally {
       setDeleting(false);
     }
@@ -199,11 +226,23 @@ const InvoicesPage = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box display="flex" alignItems="center" gap={2} mb={3}>
-        <Database size={32} color="#1B4B8C" />
-        <Typography variant="h4">
-          Invoices
-        </Typography>
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={3}>
+        <Box display="flex" alignItems="center" gap={2}>
+          <Database size={32} color="#1B4B8C" />
+          <Typography variant="h4">
+            Invoices
+          </Typography>
+        </Box>
+        {selectedInvoices.size > 0 && (
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<Trash2 size={16} />}
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            Delete Selected ({selectedInvoices.size})
+          </Button>
+        )}
       </Box>
 
       {error && (
@@ -310,7 +349,11 @@ const InvoicesPage = () => {
                 onChange={(e) => handleFilterChange('vendor', e.target.value)}
               >
                 <MenuItem value="">All Vendors</MenuItem>
-                {/* TODO: Load vendors dynamically */}
+                {vendors.map((vendor) => (
+                  <MenuItem key={vendor.id} value={vendor.id}>
+                    {vendor.display_name || vendor.name}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Grid>
@@ -338,8 +381,22 @@ const InvoicesPage = () => {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedInvoices.size > 0 && selectedInvoices.size < invoices.length}
+                    checked={invoices.length > 0 && selectedInvoices.size === invoices.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedInvoices(new Set(invoices.map(inv => inv.id)));
+                      } else {
+                        setSelectedInvoices(new Set());
+                      }
+                    }}
+                  />
+                </TableCell>
                 <TableCell>Invoice #</TableCell>
                 <TableCell>Customer</TableCell>
+                <TableCell>Vendor</TableCell>
                 <TableCell>Amount</TableCell>
                 <TableCell>Date</TableCell>
                 <TableCell>Status</TableCell>
@@ -349,6 +406,20 @@ const InvoicesPage = () => {
             <TableBody>
               {invoices.map((invoice) => (
                 <TableRow key={invoice.id} hover>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={selectedInvoices.has(invoice.id)}
+                      onChange={(e) => {
+                        const newSelected = new Set(selectedInvoices);
+                        if (e.target.checked) {
+                          newSelected.add(invoice.id);
+                        } else {
+                          newSelected.delete(invoice.id);
+                        }
+                        setSelectedInvoices(newSelected);
+                      }}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight="medium">
                       {invoice.invoice_number}
@@ -357,6 +428,11 @@ const InvoicesPage = () => {
                   <TableCell>
                     <Typography variant="body2">
                       {invoice.customer_name || 'N/A'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2">
+                      {invoice.vendor_display_name || invoice.vendor_name || 'N/A'}
                     </Typography>
                   </TableCell>
                   <TableCell>
@@ -459,13 +535,110 @@ const InvoicesPage = () => {
                   </Typography>
                   
                   {/* Invoice Details */}
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle1" fontWeight="bold">Invoice Details</Typography>
-                    <Typography variant="body2">Invoice #: {selectedInvoice.invoice_number}</Typography>
-                    <Typography variant="body2">Customer: {selectedInvoice.customer_name}</Typography>
-                    <Typography variant="body2">Amount: {formatCurrency(selectedInvoice.total_amount)}</Typography>
-                    <Typography variant="body2">Date: {formatDate(selectedInvoice.invoice_date)}</Typography>
-                    <Typography variant="body2">Status: {selectedInvoice.processing_status}</Typography>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Invoice Details</Typography>
+                    <Grid container spacing={1}>
+                      <Grid item xs={6}>
+                        <Typography variant="body2"><strong>Invoice #:</strong> {selectedInvoice.invoice_number}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2"><strong>Customer:</strong> {selectedInvoice.customer_name}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2"><strong>Date:</strong> {formatDate(selectedInvoice.invoice_date)}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2"><strong>Due Date:</strong> {formatDate(selectedInvoice.due_date)}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2"><strong>Total:</strong> {formatCurrency(selectedInvoice.total_amount)}</Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2"><strong>Status:</strong> {selectedInvoice.processing_status}</Typography>
+                      </Grid>
+                    </Grid>
+
+                    {/* Amount Breakdown - Show if available */}
+                    {(selectedInvoice.subtotal || selectedInvoice.total_taxes || selectedInvoice.total_fees) && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Amount Breakdown</Typography>
+                        <Grid container spacing={1}>
+                          {selectedInvoice.subtotal && (
+                            <Grid item xs={6}>
+                              <Typography variant="body2"><strong>Subtotal:</strong> {formatCurrency(selectedInvoice.subtotal)}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.total_taxes && (
+                            <Grid item xs={6}>
+                              <Typography variant="body2"><strong>Taxes:</strong> {formatCurrency(selectedInvoice.total_taxes)}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.total_fees && (
+                            <Grid item xs={6}>
+                              <Typography variant="body2"><strong>Fees:</strong> {formatCurrency(selectedInvoice.total_fees)}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.amount_due && (
+                            <Grid item xs={6}>
+                              <Typography variant="body2"><strong>Amount Due:</strong> {formatCurrency(selectedInvoice.amount_due)}</Typography>
+                            </Grid>
+                          )}
+                        </Grid>
+                      </Box>
+                    )}
+
+                    {/* Service Period & Terms - Show if available */}
+                    {(selectedInvoice.service_period_start || selectedInvoice.service_period_end || selectedInvoice.payment_terms || selectedInvoice.purchase_order_number) && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Terms & Service Period</Typography>
+                        <Grid container spacing={1}>
+                          {selectedInvoice.purchase_order_number && (
+                            <Grid item xs={12}>
+                              <Typography variant="body2"><strong>PO Number:</strong> {selectedInvoice.purchase_order_number}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.payment_terms && (
+                            <Grid item xs={12}>
+                              <Typography variant="body2"><strong>Payment Terms:</strong> {selectedInvoice.payment_terms}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.service_period_start && (
+                            <Grid item xs={6}>
+                              <Typography variant="body2"><strong>Service Start:</strong> {formatDate(selectedInvoice.service_period_start)}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.service_period_end && (
+                            <Grid item xs={6}>
+                              <Typography variant="body2"><strong>Service End:</strong> {formatDate(selectedInvoice.service_period_end)}</Typography>
+                            </Grid>
+                          )}
+                        </Grid>
+                      </Box>
+                    )}
+
+                    {/* Contact Info - Show if available */}
+                    {(selectedInvoice.contact_email || selectedInvoice.contact_phone || selectedInvoice.customer_account_number) && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>Customer Contact</Typography>
+                        <Grid container spacing={1}>
+                          {selectedInvoice.customer_account_number && (
+                            <Grid item xs={12}>
+                              <Typography variant="body2"><strong>Account #:</strong> {selectedInvoice.customer_account_number}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.contact_email && (
+                            <Grid item xs={12}>
+                              <Typography variant="body2"><strong>Email:</strong> {selectedInvoice.contact_email}</Typography>
+                            </Grid>
+                          )}
+                          {selectedInvoice.contact_phone && (
+                            <Grid item xs={12}>
+                              <Typography variant="body2"><strong>Phone:</strong> {selectedInvoice.contact_phone}</Typography>
+                            </Grid>
+                          )}
+                        </Grid>
+                      </Box>
+                    )}
                   </Box>
 
                   {/* Line Items */}
@@ -473,11 +646,59 @@ const InvoicesPage = () => {
                     <Box>
                       <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Line Items</Typography>
                       {selectedInvoice.line_items.map((item, index) => (
-                        <Box key={index} sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
-                          <Typography variant="body2">{item.description}</Typography>
-                          <Typography variant="caption">
-                            Qty: {item.quantity} × {formatCurrency(item.unit_price)} = {formatCurrency(item.total_amount)}
+                        <Box key={index} sx={{ mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>
+                            {item.description}
                           </Typography>
+                          <Grid container spacing={1} sx={{ mb: 1 }}>
+                            <Grid item xs={6}>
+                              <Typography variant="caption">
+                                <strong>Qty:</strong> {item.quantity} {item.unit_of_measure && `(${item.unit_of_measure})`}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption">
+                                <strong>Unit Price:</strong> {formatCurrency(item.unit_price)}
+                              </Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption">
+                                <strong>Total:</strong> {formatCurrency(item.total_amount)}
+                              </Typography>
+                            </Grid>
+                            {item.category && (
+                              <Grid item xs={6}>
+                                <Typography variant="caption">
+                                  <strong>Category:</strong> {item.category}
+                                </Typography>
+                              </Grid>
+                            )}
+                          </Grid>
+                          {(item.charge_type || item.sku || item.product_code) && (
+                            <Grid container spacing={1}>
+                              {item.charge_type && (
+                                <Grid item xs={4}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {item.charge_type}
+                                  </Typography>
+                                </Grid>
+                              )}
+                              {item.sku && (
+                                <Grid item xs={4}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    SKU: {item.sku}
+                                  </Typography>
+                                </Grid>
+                              )}
+                              {item.product_code && (
+                                <Grid item xs={4}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Code: {item.product_code}
+                                  </Typography>
+                                </Grid>
+                              )}
+                            </Grid>
+                          )}
                         </Box>
                       ))}
                     </Box>
@@ -493,13 +714,20 @@ const InvoicesPage = () => {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
+      <Dialog open={deleteDialogOpen} onClose={() => !deleting && setDeleteDialogOpen(false)} maxWidth="sm">
+        <DialogTitle>
+          {invoiceToDelete ? 'Delete Invoice' : `Delete ${selectedInvoices.size} Invoices`}
+        </DialogTitle>
         <DialogContent>
-          <Typography>
-            Are you sure you want to permanently delete invoice "{invoiceToDelete?.invoice_number}"?
-            This action cannot be undone and will remove all related data and files.
+          <Typography sx={{ mb: 2 }}>
+            {invoiceToDelete 
+              ? `Are you sure you want to permanently delete invoice "${invoiceToDelete.invoice_number}"?`
+              : `Are you sure you want to permanently delete ${selectedInvoices.size} selected invoice${selectedInvoices.size === 1 ? '' : 's'}?`
+            }
           </Typography>
+          <Alert severity="warning">
+            This action cannot be undone and will remove all related data and files.
+          </Alert>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>
@@ -512,7 +740,10 @@ const InvoicesPage = () => {
             disabled={deleting}
             startIcon={deleting ? <CircularProgress size={16} /> : <Trash2 size={16} />}
           >
-            {deleting ? 'Deleting...' : 'Delete Permanently'}
+            {deleting 
+              ? `Deleting${selectedInvoices.size > 1 ? ` (${selectedInvoices.size})` : ''}...` 
+              : `Delete${selectedInvoices.size > 1 ? ` (${selectedInvoices.size})` : ''} Permanently`
+            }
           </Button>
         </DialogActions>
       </Dialog>

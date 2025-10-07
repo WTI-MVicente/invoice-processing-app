@@ -36,6 +36,13 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  DollarSign,
+  Phone,
+  Mail,
+  CreditCard,
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
@@ -57,6 +64,13 @@ const InvoiceReviewDialog = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
+  const [expandedSections, setExpandedSections] = useState({
+    basic: true,
+    amounts: false,
+    dates: false,
+    contact: false,
+    lineItemDetails: false
+  });
 
   // Initialize editable invoice data
   useEffect(() => {
@@ -68,12 +82,17 @@ const InvoiceReviewDialog = ({
           invoice_date: formatDateForInput(invoice.invoice_date),
           due_date: formatDateForInput(invoice.due_date),
           issue_date: formatDateForInput(invoice.issue_date),
+          service_period_start: formatDateForInput(invoice.service_period_start),
+          service_period_end: formatDateForInput(invoice.service_period_end),
           currency: invoice.currency || 'USD',
           amount_due: invoice.amount_due || 0,
           total_amount: invoice.total_amount || 0,
           subtotal: invoice.subtotal || 0,
           total_taxes: invoice.total_taxes || 0,
           total_fees: invoice.total_fees || 0,
+          total_recurring: invoice.total_recurring || 0,
+          total_one_time: invoice.total_one_time || 0,
+          total_usage: invoice.total_usage || 0,
           purchase_order_number: invoice.purchase_order_number || '',
           payment_terms: invoice.payment_terms || '',
           customer_account_number: invoice.customer_account_number || '',
@@ -85,9 +104,17 @@ const InvoiceReviewDialog = ({
           description: item.description || '',
           category: item.category || '',
           charge_type: item.charge_type || 'one_time',
+          service_period_start: formatDateForInput(item.service_period_start),
+          service_period_end: formatDateForInput(item.service_period_end),
           quantity: item.quantity || 1,
+          unit_of_measure: item.unit_of_measure || '',
           unit_price: item.unit_price || 0,
+          subtotal: item.subtotal || 0,
+          tax_amount: item.tax_amount || 0,
+          fee_amount: item.fee_amount || 0,
           total_amount: item.total_amount || 0,
+          sku: item.sku || '',
+          product_code: item.product_code || '',
         })) || []
       });
       
@@ -148,6 +175,48 @@ const InvoiceReviewDialog = ({
     );
   };
 
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  const CollapsibleSection = ({ title, icon, section, children, defaultExpanded = false }) => {
+    const isExpanded = expandedSections[section];
+    
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="space-between"
+          onClick={() => toggleSection(section)}
+          sx={{
+            cursor: 'pointer',
+            p: 1,
+            borderRadius: 1,
+            '&:hover': { bgcolor: 'rgba(0,0,0,0.05)' },
+            mb: isExpanded ? 1 : 0
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            {icon}
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              {title}
+            </Typography>
+          </Box>
+          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </Box>
+        {isExpanded && (
+          <Box sx={{ pl: 1 }}>
+            {children}
+          </Box>
+        )}
+      </Box>
+    );
+  };
+
   const handleFieldChange = (section, field, value) => {
     setEditableInvoice(prev => ({
       ...prev,
@@ -177,9 +246,17 @@ const InvoiceReviewDialog = ({
           description: '',
           category: '',
           charge_type: 'one_time',
+          service_period_start: '',
+          service_period_end: '',
           quantity: 1,
+          unit_of_measure: '',
           unit_price: 0,
+          subtotal: 0,
+          tax_amount: 0,
+          fee_amount: 0,
           total_amount: 0,
+          sku: '',
+          product_code: '',
         }
       ]
     }));
@@ -331,90 +408,273 @@ const InvoiceReviewDialog = ({
                 )}
               </Typography>
 
-              {/* Invoice Header */}
-              <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>
-                Invoice Information
-              </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Invoice Number"
-                    value={editableInvoice.invoice_header.invoice_number}
-                    onChange={(e) => handleFieldChange('invoice_header', 'invoice_number', e.target.value)}
-                    disabled={!editMode}
-                    size="small"
-                  />
+              {/* Basic Information - Always Expanded */}
+              <CollapsibleSection 
+                title="Basic Information" 
+                icon={<FileText size={16} />} 
+                section="basic"
+              >
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Invoice Number"
+                      value={editableInvoice.invoice_header.invoice_number}
+                      onChange={(e) => handleFieldChange('invoice_header', 'invoice_number', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Customer Name"
+                      value={editableInvoice.invoice_header.customer_name}
+                      onChange={(e) => handleFieldChange('invoice_header', 'customer_name', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Total Amount"
+                      type="number"
+                      value={editableInvoice.invoice_header.total_amount}
+                      onChange={(e) => handleFieldChange('invoice_header', 'total_amount', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Purchase Order Number"
+                      value={editableInvoice.invoice_header.purchase_order_number}
+                      onChange={(e) => handleFieldChange('invoice_header', 'purchase_order_number', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                    />
+                  </Grid>
                 </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Customer Name"
-                    value={editableInvoice.invoice_header.customer_name}
-                    onChange={(e) => handleFieldChange('invoice_header', 'customer_name', e.target.value)}
-                    disabled={!editMode}
-                    size="small"
-                  />
+              </CollapsibleSection>
+
+              {/* Amount Breakdown */}
+              <CollapsibleSection 
+                title="Amount Breakdown" 
+                icon={<DollarSign size={16} />} 
+                section="amounts"
+              >
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Subtotal"
+                      type="number"
+                      value={editableInvoice.invoice_header.subtotal}
+                      onChange={(e) => handleFieldChange('invoice_header', 'subtotal', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Amount Due"
+                      type="number"
+                      value={editableInvoice.invoice_header.amount_due}
+                      onChange={(e) => handleFieldChange('invoice_header', 'amount_due', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Total Taxes"
+                      type="number"
+                      value={editableInvoice.invoice_header.total_taxes}
+                      onChange={(e) => handleFieldChange('invoice_header', 'total_taxes', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Total Fees"
+                      type="number"
+                      value={editableInvoice.invoice_header.total_fees}
+                      onChange={(e) => handleFieldChange('invoice_header', 'total_fees', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
+                  <Grid item xs={4}>
+                    <TextField
+                      fullWidth
+                      label="Recurring Total"
+                      type="number"
+                      value={editableInvoice.invoice_header.total_recurring}
+                      onChange={(e) => handleFieldChange('invoice_header', 'total_recurring', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
+                  <Grid item xs={4}>
+                    <TextField
+                      fullWidth
+                      label="One-Time Total"
+                      type="number"
+                      value={editableInvoice.invoice_header.total_one_time}
+                      onChange={(e) => handleFieldChange('invoice_header', 'total_one_time', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
+                  <Grid item xs={4}>
+                    <TextField
+                      fullWidth
+                      label="Usage Total"
+                      type="number"
+                      value={editableInvoice.invoice_header.total_usage}
+                      onChange={(e) => handleFieldChange('invoice_header', 'total_usage', parseFloat(e.target.value) || 0)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: '$' }}
+                    />
+                  </Grid>
                 </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Invoice Date"
-                    type="date"
-                    value={editableInvoice.invoice_header.invoice_date}
-                    onChange={(e) => handleFieldChange('invoice_header', 'invoice_date', e.target.value)}
-                    disabled={!editMode}
-                    size="small"
-                    InputLabelProps={{ shrink: true }}
-                  />
+              </CollapsibleSection>
+
+              {/* Dates & Service Periods */}
+              <CollapsibleSection 
+                title="Dates & Service Periods" 
+                icon={<Calendar size={16} />} 
+                section="dates"
+              >
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Invoice Date"
+                      type="date"
+                      value={editableInvoice.invoice_header.invoice_date}
+                      onChange={(e) => handleFieldChange('invoice_header', 'invoice_date', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Due Date"
+                      type="date"
+                      value={editableInvoice.invoice_header.due_date}
+                      onChange={(e) => handleFieldChange('invoice_header', 'due_date', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Issue Date"
+                      type="date"
+                      value={editableInvoice.invoice_header.issue_date}
+                      onChange={(e) => handleFieldChange('invoice_header', 'issue_date', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Payment Terms"
+                      value={editableInvoice.invoice_header.payment_terms}
+                      onChange={(e) => handleFieldChange('invoice_header', 'payment_terms', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Service Period Start"
+                      type="date"
+                      value={editableInvoice.invoice_header.service_period_start}
+                      onChange={(e) => handleFieldChange('invoice_header', 'service_period_start', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Service Period End"
+                      type="date"
+                      value={editableInvoice.invoice_header.service_period_end}
+                      onChange={(e) => handleFieldChange('invoice_header', 'service_period_end', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
                 </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Due Date"
-                    type="date"
-                    value={editableInvoice.invoice_header.due_date}
-                    onChange={(e) => handleFieldChange('invoice_header', 'due_date', e.target.value)}
-                    disabled={!editMode}
-                    size="small"
-                    InputLabelProps={{ shrink: true }}
-                  />
+              </CollapsibleSection>
+
+              {/* Contact & Account Information */}
+              <CollapsibleSection 
+                title="Customer Contact & Account" 
+                icon={<CreditCard size={16} />} 
+                section="contact"
+              >
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Customer Account Number"
+                      value={editableInvoice.invoice_header.customer_account_number}
+                      onChange={(e) => handleFieldChange('invoice_header', 'customer_account_number', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Contact Email"
+                      value={editableInvoice.invoice_header.contact_email}
+                      onChange={(e) => handleFieldChange('invoice_header', 'contact_email', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: <Mail size={16} style={{ marginRight: 8, color: '#666' }} /> }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Contact Phone"
+                      value={editableInvoice.invoice_header.contact_phone}
+                      onChange={(e) => handleFieldChange('invoice_header', 'contact_phone', e.target.value)}
+                      disabled={!editMode}
+                      size="small"
+                      InputProps={{ startAdornment: <Phone size={16} style={{ marginRight: 8, color: '#666' }} /> }}
+                    />
+                  </Grid>
                 </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Total Amount"
-                    type="number"
-                    value={editableInvoice.invoice_header.total_amount}
-                    onChange={(e) => handleFieldChange('invoice_header', 'total_amount', parseFloat(e.target.value) || 0)}
-                    disabled={!editMode}
-                    size="small"
-                    InputProps={{ startAdornment: '$' }}
-                  />
-                </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Amount Due"
-                    type="number"
-                    value={editableInvoice.invoice_header.amount_due}
-                    onChange={(e) => handleFieldChange('invoice_header', 'amount_due', parseFloat(e.target.value) || 0)}
-                    disabled={!editMode}
-                    size="small"
-                    InputProps={{ startAdornment: '$' }}
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Purchase Order Number"
-                    value={editableInvoice.invoice_header.purchase_order_number}
-                    onChange={(e) => handleFieldChange('invoice_header', 'purchase_order_number', e.target.value)}
-                    disabled={!editMode}
-                    size="small"
-                  />
-                </Grid>
-              </Grid>
+              </CollapsibleSection>
 
               <Divider sx={{ my: 3 }} />
 
@@ -435,15 +695,16 @@ const InvoiceReviewDialog = ({
                 )}
               </Box>
 
-              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 300 }}>
+              {/* Line Items - Compact Table */}
+              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 200, mb: 2 }}>
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Description</TableCell>
-                      <TableCell align="right">Quantity</TableCell>
-                      <TableCell align="right">Unit Price</TableCell>
-                      <TableCell align="right">Total</TableCell>
-                      {editMode && <TableCell align="center">Actions</TableCell>}
+                      <TableCell sx={{ minWidth: 120 }}>Description</TableCell>
+                      <TableCell align="center" sx={{ width: 80 }}>Qty</TableCell>
+                      <TableCell align="right" sx={{ width: 80 }}>Unit Price</TableCell>
+                      <TableCell align="right" sx={{ width: 80 }}>Total</TableCell>
+                      {editMode && <TableCell align="center" sx={{ width: 50 }}>Actions</TableCell>}
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -457,12 +718,16 @@ const InvoiceReviewDialog = ({
                               onChange={(e) => handleLineItemChange(index, 'description', e.target.value)}
                               size="small"
                               variant="standard"
+                              multiline
+                              maxRows={2}
                             />
                           ) : (
-                            item.description
+                            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                              {item.description}
+                            </Typography>
                           )}
                         </TableCell>
-                        <TableCell align="right">
+                        <TableCell align="center">
                           {editMode ? (
                             <TextField
                               type="number"
@@ -470,10 +735,12 @@ const InvoiceReviewDialog = ({
                               onChange={(e) => handleLineItemChange(index, 'quantity', parseFloat(e.target.value) || 0)}
                               size="small"
                               variant="standard"
-                              sx={{ width: 80 }}
+                              sx={{ width: 60 }}
                             />
                           ) : (
-                            item.quantity
+                            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                              {item.quantity} {item.unit_of_measure}
+                            </Typography>
                           )}
                         </TableCell>
                         <TableCell align="right">
@@ -484,11 +751,13 @@ const InvoiceReviewDialog = ({
                               onChange={(e) => handleLineItemChange(index, 'unit_price', parseFloat(e.target.value) || 0)}
                               size="small"
                               variant="standard"
-                              sx={{ width: 100 }}
+                              sx={{ width: 70 }}
                               InputProps={{ startAdornment: '$' }}
                             />
                           ) : (
-                            formatCurrency(item.unit_price)
+                            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                              {formatCurrency(item.unit_price)}
+                            </Typography>
                           )}
                         </TableCell>
                         <TableCell align="right">
@@ -499,11 +768,13 @@ const InvoiceReviewDialog = ({
                               onChange={(e) => handleLineItemChange(index, 'total_amount', parseFloat(e.target.value) || 0)}
                               size="small"
                               variant="standard"
-                              sx={{ width: 100 }}
+                              sx={{ width: 70 }}
                               InputProps={{ startAdornment: '$' }}
                             />
                           ) : (
-                            formatCurrency(item.total_amount)
+                            <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 500 }}>
+                              {formatCurrency(item.total_amount)}
+                            </Typography>
                           )}
                         </TableCell>
                         {editMode && (
@@ -513,7 +784,7 @@ const InvoiceReviewDialog = ({
                               onClick={() => removeLineItem(index)}
                               color="error"
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={14} />
                             </IconButton>
                           </TableCell>
                         )}
@@ -522,6 +793,133 @@ const InvoiceReviewDialog = ({
                   </TableBody>
                 </Table>
               </TableContainer>
+
+              {/* Line Item Details - Expandable */}
+              <CollapsibleSection 
+                title="Line Item Details" 
+                icon={<Eye size={16} />} 
+                section="lineItemDetails"
+              >
+                {editableInvoice.line_items.map((item, index) => (
+                  <Box key={index} sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                      Line {index + 1}: {item.description || 'Untitled Item'}
+                    </Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Category"
+                          value={item.category}
+                          onChange={(e) => handleLineItemChange(index, 'category', e.target.value)}
+                          disabled={!editMode}
+                          size="small"
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Charge Type"
+                          value={item.charge_type}
+                          onChange={(e) => handleLineItemChange(index, 'charge_type', e.target.value)}
+                          disabled={!editMode}
+                          size="small"
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Unit of Measure"
+                          value={item.unit_of_measure}
+                          onChange={(e) => handleLineItemChange(index, 'unit_of_measure', e.target.value)}
+                          disabled={!editMode}
+                          size="small"
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="SKU"
+                          value={item.sku}
+                          onChange={(e) => handleLineItemChange(index, 'sku', e.target.value)}
+                          disabled={!editMode}
+                          size="small"
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Product Code"
+                          value={item.product_code}
+                          onChange={(e) => handleLineItemChange(index, 'product_code', e.target.value)}
+                          disabled={!editMode}
+                          size="small"
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Subtotal"
+                          type="number"
+                          value={item.subtotal}
+                          onChange={(e) => handleLineItemChange(index, 'subtotal', parseFloat(e.target.value) || 0)}
+                          disabled={!editMode}
+                          size="small"
+                          InputProps={{ startAdornment: '$' }}
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Tax Amount"
+                          type="number"
+                          value={item.tax_amount}
+                          onChange={(e) => handleLineItemChange(index, 'tax_amount', parseFloat(e.target.value) || 0)}
+                          disabled={!editMode}
+                          size="small"
+                          InputProps={{ startAdornment: '$' }}
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Fee Amount"
+                          type="number"
+                          value={item.fee_amount}
+                          onChange={(e) => handleLineItemChange(index, 'fee_amount', parseFloat(e.target.value) || 0)}
+                          disabled={!editMode}
+                          size="small"
+                          InputProps={{ startAdornment: '$' }}
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Service Period Start"
+                          type="date"
+                          value={item.service_period_start}
+                          onChange={(e) => handleLineItemChange(index, 'service_period_start', e.target.value)}
+                          disabled={!editMode}
+                          size="small"
+                          InputLabelProps={{ shrink: true }}
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <TextField
+                          fullWidth
+                          label="Service Period End"
+                          type="date"
+                          value={item.service_period_end}
+                          onChange={(e) => handleLineItemChange(index, 'service_period_end', e.target.value)}
+                          disabled={!editMode}
+                          size="small"
+                          InputLabelProps={{ shrink: true }}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Box>
+                ))}
+              </CollapsibleSection>
             </Box>
           </Grid>
         </Grid>

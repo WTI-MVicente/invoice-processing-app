@@ -21,7 +21,11 @@ import {
   FormControlLabel,
   Alert,
   CircularProgress,
-  Tooltip
+  Tooltip,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel
 } from '@mui/material';
 import {
   Plus,
@@ -31,9 +35,12 @@ import {
   Building2
 } from 'lucide-react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const VendorsPage = () => {
+  const navigate = useNavigate();
   const [vendors, setVendors] = useState([]);
+  const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -42,26 +49,40 @@ const VendorsPage = () => {
   const [formData, setFormData] = useState({
     name: '',
     display_name: '',
-    active: true
+    active: true,
+    extraction_prompt_id: ''
   });
   const [submitting, setSubmitting] = useState(false);
 
-  // Load vendors on component mount
+  // Load vendors and prompts on component mount
   useEffect(() => {
     loadVendors();
+    loadPrompts();
   }, []);
 
   const loadVendors = async () => {
     try {
       setLoading(true);
       const response = await axios.get('/api/vendors');
-      setVendors(response.data.vendors);
+      setVendors(response.data.vendors || []);
       setError(null);
     } catch (err) {
       console.error('Failed to load vendors:', err);
-      setError('Failed to load vendors. Please try again.');
+      const message = err.response?.data?.error || err.message || 'Failed to load vendors. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPrompts = async () => {
+    try {
+      const response = await axios.get('/api/prompts');
+      // Get all prompts, not just templates, to allow assignment of any prompt
+      setPrompts(response.data.prompts || []);
+    } catch (err) {
+      console.error('Failed to load prompts:', err);
+      // Don't set error for prompts, it's not critical for vendor management
     }
   };
 
@@ -70,14 +91,16 @@ const VendorsPage = () => {
     if (vendor) {
       setFormData({
         name: vendor.name,
-        display_name: vendor.display_name,
-        active: vendor.active
+        display_name: vendor.display_name || '',
+        active: vendor.active,
+        extraction_prompt_id: vendor.active_prompt_id || ''
       });
     } else {
       setFormData({
         name: '',
         display_name: '',
-        active: true
+        active: true,
+        extraction_prompt_id: ''
       });
     }
     setOpenDialog(true);
@@ -86,7 +109,12 @@ const VendorsPage = () => {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setEditingVendor(null);
-    setFormData({ name: '', display_name: '', active: true });
+    setFormData({ name: '', display_name: '', active: true, extraction_prompt_id: '' });
+  };
+
+  const handleManagePrompts = (vendor) => {
+    // Navigate to prompts page with vendor filter
+    navigate('/prompts', { state: { vendorFilter: vendor.id, vendorName: vendor.display_name || vendor.name } });
   };
 
   const handleSubmit = async () => {
@@ -126,7 +154,7 @@ const VendorsPage = () => {
       setError(null);
     } catch (err) {
       console.error('Failed to delete vendor:', err);
-      const message = err.response?.data?.error || 'Failed to delete vendor';
+      const message = err.response?.data?.error || err.message || 'Failed to delete vendor';
       setError(message);
     }
   };
@@ -244,6 +272,7 @@ const VendorsPage = () => {
                         <Tooltip title="Manage Prompts">
                           <IconButton
                             size="small"
+                            onClick={() => handleManagePrompts(vendor)}
                             sx={{ 
                               background: 'rgba(255, 255, 255, 0.8)',
                               '&:hover': { background: 'rgba(46, 124, 228, 0.1)' }
@@ -252,20 +281,31 @@ const VendorsPage = () => {
                             <Code size={16} />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title="Delete Vendor">
-                          <IconButton
-                            size="small"
-                            onClick={() => setDeleteConfirm(vendor)}
-                            disabled={vendor.invoice_count > 0}
-                            sx={{ 
-                              background: 'rgba(255, 255, 255, 0.8)',
-                              '&:hover': { 
-                                background: vendor.invoice_count > 0 ? 'rgba(255, 255, 255, 0.8)' : 'rgba(253, 126, 20, 0.1)' 
-                              }
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </IconButton>
+                        <Tooltip 
+                          title={vendor.invoice_count > 0 
+                            ? `Cannot delete - ${vendor.invoice_count} invoice${vendor.invoice_count === 1 ? '' : 's'} exist` 
+                            : "Delete Vendor"
+                          }
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => setDeleteConfirm(vendor)}
+                              disabled={vendor.invoice_count > 0}
+                              sx={{ 
+                                background: 'rgba(255, 255, 255, 0.8)',
+                                '&:hover': { 
+                                  background: vendor.invoice_count > 0 ? 'rgba(255, 255, 255, 0.8)' : 'rgba(253, 126, 20, 0.1)' 
+                                },
+                                '&.Mui-disabled': {
+                                  opacity: 0.5,
+                                  background: 'rgba(255, 255, 255, 0.5)'
+                                }
+                              }}
+                            >
+                              <Trash2 size={16} />
+                            </IconButton>
+                          </span>
                         </Tooltip>
                       </Box>
                     </TableCell>
@@ -305,6 +345,26 @@ const VendorsPage = () => {
               placeholder="e.g., Genesys, Five9"
               helperText="Display name shown in the UI"
             />
+            <FormControl fullWidth>
+              <InputLabel>Active Extraction Prompt</InputLabel>
+              <Select
+                value={formData.extraction_prompt_id}
+                onChange={(e) => setFormData({ ...formData, extraction_prompt_id: e.target.value })}
+                label="Active Extraction Prompt"
+              >
+                <MenuItem value="">
+                  <em>No prompt assigned</em>
+                </MenuItem>
+                {prompts.map((prompt) => (
+                  <MenuItem key={prompt.id} value={prompt.id}>
+                    {prompt.prompt_name} 
+                    {prompt.version && ` (v${prompt.version})`}
+                    {prompt.is_template && ' [Template]'}
+                    {prompt.is_active && ' [Active]'}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <FormControlLabel
               control={
                 <Switch
@@ -339,14 +399,26 @@ const VendorsPage = () => {
       >
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
-          <Typography>
-            Are you sure you want to delete vendor "{deleteConfirm?.display_name}"?
+          <Typography sx={{ mb: 2 }}>
+            Are you sure you want to delete vendor "{deleteConfirm?.display_name || deleteConfirm?.name}"?
             This action cannot be undone.
           </Typography>
-          {deleteConfirm?.invoice_count > 0 && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              This vendor has {deleteConfirm.invoice_count} associated invoices.
-              You cannot delete vendors with existing invoices.
+          
+          {deleteConfirm?.invoice_count > 0 ? (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Cannot Delete Vendor
+              </Typography>
+              <Typography variant="body2">
+                This vendor has {deleteConfirm.invoice_count} associated invoice{deleteConfirm.invoice_count === 1 ? '' : 's'}.
+                You must delete all associated invoices before you can delete this vendor.
+              </Typography>
+            </Alert>
+          ) : (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography variant="body2">
+                This vendor has no associated invoices and can be safely deleted.
+              </Typography>
             </Alert>
           )}
         </DialogContent>

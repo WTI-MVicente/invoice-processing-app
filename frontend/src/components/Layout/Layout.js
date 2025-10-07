@@ -19,8 +19,8 @@ const Layout = () => {
       >
         <Toolbar>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <BarChart3 size={24} />
-            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 500 }}>
+            <BarChart3 size={24} color="white" />
+            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 500, color: 'white' }}>
               Waterfield Technologies - Invoice Processing
             </Typography>
           </Box>
