@@ -29,6 +29,7 @@ AI-powered invoice processing application for Waterfield Technologies built with
 ### 📊 Data Management
 - **Review & Approve Page**: Workflow-focused invoice processing
 - **Invoices Page**: Complete data management with view/delete
+- **Prompts Page**: AI prompt management with real-time testing
 - **Statistics Cards**: Total, Pending, Approved, Rejected counts
 - **Vendor Management**: Full CRUD operations
 - **Permanent Deletion**: Removes database records and files
@@ -50,6 +51,9 @@ customers (customer accounts)
 /api/vendors/*     - Vendor management
 /api/invoices/*    - Invoice CRUD operations
 /api/invoices/:id/file - PDF/HTML file serving
+/api/prompts/*     - Prompts CRUD operations
+/api/prompts/:id/test-upload - File upload for testing
+/api/prompts/:id/test-run - Claude AI prompt testing
 ```
 
 ### File Structure
@@ -57,6 +61,7 @@ customers (customer accounts)
 backend/
 ├── src/
 │   ├── routes/invoices.js      # Main invoice API
+│   ├── routes/prompts.js       # Prompts management API
 │   ├── services/claudeService.js # AI integration  
 │   ├── middleware/upload.js    # File processing
 │   └── server.js              # Express setup
@@ -64,6 +69,7 @@ frontend/
 ├── src/
 │   ├── pages/ReviewPage.js     # Review workflow
 │   ├── pages/InvoicesPage.js   # Data management
+│   ├── pages/PromptsPage.js    # Prompts management with 2x2 testing UI
 │   ├── components/InvoiceReviewDialog.js # Split-screen UI
 │   └── App.js                 # Routes
 ```
@@ -111,14 +117,16 @@ npm run db:migrate
 
 ## Development Workflow
 
-### Current Branch: master
-All invoice management features are complete and merged.
+### Current Branch: feature/prompts-management
+All prompts management features are complete and ready for merge.
 
-### Next Phase: Prompts Management
-- Prompt editing interface
-- Claude prompt testing
-- Version control system
-- Integration with existing Claude service
+### Completed: Prompts Management System ✅
+- **Enhanced 2x2 Test Interface**: Intuitive layout with document comparison
+- **Full CRUD Operations**: Create, edit, delete, and version prompts  
+- **Real-time Testing**: Upload documents and test extraction immediately
+- **Claude Integration**: Direct API testing with structured results
+- **Smart UX Flow**: Step-by-step workflow with visual progress indicators
+- **File Processing**: PDF/HTML upload with text extraction display
 
 ### Common Development Tasks
 
@@ -201,7 +209,58 @@ SELECT * FROM invoices LIMIT 5;
 - Database queries optimized with indexes
 - File serving uses proper caching headers
 
+## Latest Implementation: Prompts Management System
+
+### 🎯 Enhanced Test Prompt Interface (2x2 Grid Layout)
+
+**Design Philosophy**: Intuitive workflow for prompt fine-tuning with visual comparison
+
+**Layout Structure**:
+```
+┌─────────────────┬─────────────────┐
+│  ⚡ Prompt      │  📝 Extracted   │
+│   Editor        │   Text Display  │
+│                 │                 │
+├─────────────────┼─────────────────┤
+│  📄 Document    │  📊 Extraction  │
+│   Preview       │   Results       │
+│                 │                 │
+└─────────────────┴─────────────────┘
+```
+
+**Workflow Steps**:
+1. **Edit Prompt** (Top Left): Full-height editor with scrolling
+2. **Extract & Verify Text** (Top Right): View extracted content  
+3. **Upload & Preview** (Bottom Left): Document visualization
+4. **Test & Review** (Bottom Right): Compare results with document
+
+### 🔧 Key Technical Achievements
+- **Dynamic Step Indicators**: Visual progress chips that update with workflow state
+- **Smart File Handling**: Auto text extraction with temporary file management
+- **Flexible Layout**: Responsive 2x2 grid optimized for comparison workflow
+- **Full-Height Editor**: TextField with proper scrolling using `!important` overrides
+- **Loading States**: Context-aware loading indicators for each operation phase
+
+### 📊 Database Integration
+```sql
+-- New table: extraction_prompts
+CREATE TABLE extraction_prompts (
+  id UUID PRIMARY KEY,
+  prompt_name VARCHAR(255) NOT NULL,
+  prompt_text TEXT NOT NULL,
+  vendor_id UUID REFERENCES vendors(id),
+  is_active BOOLEAN DEFAULT FALSE,
+  is_template BOOLEAN DEFAULT FALSE,
+  version INTEGER DEFAULT 1,
+  parent_prompt_id UUID REFERENCES extraction_prompts(id),
+  test_results JSONB,
+  created_by VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ---
 
-**Status**: Invoice Management System Complete ✅
-**Next**: Prompts Management System 🚧
+**Status**: Complete Invoice + Prompts Management System ✅  
+**Next**: Database Field Mapping System 🚧

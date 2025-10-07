@@ -55,7 +55,7 @@ app.use('/api/vendors', require('./routes/vendors'));
 app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/test', require('./routes/test'));
 // app.use('/api/customers', require('./routes/customers'));
-// app.use('/api/prompts', require('./routes/prompts'));
+app.use('/api/prompts', require('./routes/prompts'));
 // app.use('/api/export', require('./routes/export'));
 
 // Error handling middleware
