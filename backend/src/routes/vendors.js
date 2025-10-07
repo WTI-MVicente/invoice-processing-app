@@ -31,6 +31,7 @@ router.get('/', authenticateToken, async (req, res) => {
         v.name,
         v.display_name,
         v.active,
+        v.extraction_prompt_id,
         v.created_at,
         v.updated_at,
         ep.prompt_name as active_prompt_name,
@@ -38,7 +39,7 @@ router.get('/', authenticateToken, async (req, res) => {
       FROM vendors v
       LEFT JOIN extraction_prompts ep ON v.extraction_prompt_id = ep.id
       LEFT JOIN invoices i ON v.id = i.vendor_id
-      GROUP BY v.id, v.name, v.display_name, v.active, v.created_at, v.updated_at, ep.prompt_name
+      GROUP BY v.id, v.name, v.display_name, v.active, v.extraction_prompt_id, v.created_at, v.updated_at, ep.prompt_name
       ORDER BY v.name ASC
     `;
 
@@ -50,9 +51,11 @@ router.get('/', authenticateToken, async (req, res) => {
         name: row.name,
         display_name: row.display_name || row.name,
         active: row.active,
+        extraction_prompt_id: row.extraction_prompt_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
         active_prompt_name: row.active_prompt_name || 'No prompt assigned',
+        active_prompt_id: row.extraction_prompt_id,
         invoice_count: parseInt(row.invoice_count) || 0
       }))
     });

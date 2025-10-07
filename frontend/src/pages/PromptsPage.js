@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Typography,
   Paper,
@@ -46,6 +47,7 @@ import {
 } from '@mui/icons-material';
 
 const PromptsPage = () => {
+  const location = useLocation();
   const [prompts, setPrompts] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +139,16 @@ const PromptsPage = () => {
       setLoading(false);
     }
   }, [filters]);
+
+  // Handle navigation state for vendor filtering
+  useEffect(() => {
+    if (location.state?.vendorFilter) {
+      setFilters(prev => ({
+        ...prev,
+        vendor_id: location.state.vendorFilter
+      }));
+    }
+  }, [location.state]);
 
   // Load prompts and vendors on component mount
   useEffect(() => {

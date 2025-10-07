@@ -9,7 +9,6 @@ import ImportPage from './pages/ImportPage';
 import ReviewPage from './pages/ReviewPage';
 import InvoicesPage from './pages/InvoicesPage';
 import VendorsPage from './pages/VendorsPage';
-import CustomersPage from './pages/CustomersPage';
 import PromptsPage from './pages/PromptsPage';
 import ExportPage from './pages/ExportPage';
 import LoginPage from './pages/LoginPage';
@@ -33,7 +32,6 @@ function App() {
               <Route path="review" element={<ReviewPage />} />
               <Route path="invoices" element={<InvoicesPage />} />
               <Route path="vendors" element={<VendorsPage />} />
-              <Route path="customers" element={<CustomersPage />} />
               <Route path="prompts" element={<PromptsPage />} />
               <Route path="export" element={<ExportPage />} />
             </Route>
