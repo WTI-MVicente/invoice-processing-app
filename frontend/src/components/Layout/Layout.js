@@ -1,7 +1,6 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Box, AppBar, Toolbar, Typography, Container } from '@mui/material';
-import { BarChart3 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { brandColors } from '../../theme/theme';
 
@@ -19,9 +18,17 @@ const Layout = () => {
       >
         <Toolbar>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <BarChart3 size={24} color="white" />
+            <img 
+              src="/WT_logo.png" 
+              alt="Waterfield Technologies Logo" 
+              style={{ 
+                height: '32px',
+                width: 'auto',
+                filter: 'brightness(0) invert(1)' // Make logo white to match header
+              }} 
+            />
             <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 500, color: 'white' }}>
-              Waterfield Technologies - Invoice Processing
+              Invoice Processing System
             </Typography>
           </Box>
         </Toolbar>

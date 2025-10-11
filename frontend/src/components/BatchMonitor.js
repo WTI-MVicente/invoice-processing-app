@@ -420,9 +420,29 @@ const BatchMonitor = ({ batchId, onComplete, autoRefresh = true, showDetails = t
             </Grid>
           </Grid>
 
+          {/* Enhanced error reporting */}
+          {progress.failedFiles > 0 && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              <Box>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                  {progress.failedFiles} file{progress.failedFiles !== 1 ? 's' : ''} failed to process
+                </Typography>
+                <Typography variant="body2">
+                  Common issues: Duplicate invoices, corrupted files, or unsupported formats. 
+                  Check the "File Processing Details" below for specific error messages.
+                </Typography>
+              </Box>
+            </Alert>
+          )}
+          
           {progress.errorMessage && (
             <Alert severity="error" sx={{ mt: 2 }}>
-              {progress.errorMessage}
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                Batch Processing Error
+              </Typography>
+              <Typography variant="body2">
+                {progress.errorMessage}
+              </Typography>
             </Alert>
           )}
         </CardContent>
@@ -496,8 +516,8 @@ const BatchMonitor = ({ batchId, onComplete, autoRefresh = true, showDetails = t
               );
             })()}
 
-            {/* File Processing Details - Moved inside Current Processing Status */}
-            {files.length > 0 && (
+            {/* File Processing Details moved to separate section */}
+            {false && files.length > 0 && (
               <Box sx={{ mt: 3 }}>
                 <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                   File Processing Details
@@ -508,7 +528,7 @@ const BatchMonitor = ({ batchId, onComplete, autoRefresh = true, showDetails = t
                       <TableRow>
                         <TableCell>Filename</TableCell>
                         <TableCell>Status</TableCell>
-                        <TableCell>Invoice</TableCell>
+                        <TableCell>Invoice/Error Details</TableCell>
                         <TableCell>Time</TableCell>
                         <TableCell>Actions</TableCell>
                       </TableRow>
@@ -540,9 +560,20 @@ const BatchMonitor = ({ batchId, onComplete, autoRefresh = true, showDetails = t
                                   {file.customer_name}
                                 </Typography>
                               </Box>
+                            ) : file.status === 'failed' ? (
+                              <Box>
+                                <Typography variant="body2" color="error.main" fontWeight={500}>
+                                  Processing Failed
+                                </Typography>
+                                {file.error_message && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, maxWidth: '300px' }}>
+                                    {file.error_message}
+                                  </Typography>
+                                )}
+                              </Box>
                             ) : (
                               <Typography variant="body2" color="text.secondary">
-                                {file.status === 'failed' ? 'Failed' : 'Processing...'}
+                                Processing...
                               </Typography>
                             )}
                           </TableCell>
@@ -568,6 +599,114 @@ const BatchMonitor = ({ batchId, onComplete, autoRefresh = true, showDetails = t
                 </TableContainer>
               </Box>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* File Processing Details - Always visible when there are files */}
+      {showDetails && files.length > 0 && (
+        <Card sx={{ mb: 2 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FileText size={20} />
+              File Processing Details
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Detailed status and error information for each processed file.
+            </Typography>
+            
+            <TableContainer sx={{ maxHeight: 400 }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Filename</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Invoice/Error Details</TableCell>
+                    <TableCell>Time</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {files.map((file) => (
+                    <TableRow key={file.id} hover>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <FileText size={16} style={{ marginRight: 8 }} />
+                          <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
+                            {file.filename}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={file.status}
+                          color={getStatusColor(file.status)}
+                          size="small"
+                          variant="outlined"
+                          icon={getStatusIcon(file.status)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {file.invoice_number ? (
+                          <Box>
+                            <Typography variant="body2" fontWeight={500}>
+                              {file.invoice_number}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {file.customer_name}
+                            </Typography>
+                          </Box>
+                        ) : file.status === 'failed' ? (
+                          <Box>
+                            <Typography variant="body2" color="error.main" fontWeight={500}>
+                              Processing Failed
+                            </Typography>
+                            {file.error_message && (
+                              <Typography 
+                                variant="caption" 
+                                color="text.secondary" 
+                                sx={{ 
+                                  display: 'block', 
+                                  mt: 0.5, 
+                                  maxWidth: '400px',
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word'
+                                }}
+                              >
+                                {file.error_message}
+                              </Typography>
+                            )}
+                          </Box>
+                        ) : file.status === 'processing' ? (
+                          <Typography variant="body2" color="info.main">
+                            Processing...
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            Pending
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {file.processing_time_ms ? `${Math.round(file.processing_time_ms / 1000)}s` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {file.invoice_id && (
+                          <Tooltip title="View invoice">
+                            <IconButton
+                              size="small"
+                              onClick={() => window.location.href = `/review?invoice=${file.invoice_id}`}
+                            >
+                              <Eye size={16} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </CardContent>
         </Card>
       )}

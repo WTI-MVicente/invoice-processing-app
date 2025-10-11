@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
+import { formatCurrency, formatQuantity } from '../utils/formatters';
 
 const InvoiceReviewDialog = ({ 
   open, 
@@ -134,11 +135,15 @@ const InvoiceReviewDialog = ({
   };
 
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount || 0);
+  // Formatting helpers for input fields
+  const formatCurrencyInput = (value) => {
+    if (!value || value === 0) return '0.00';
+    return parseFloat(value).toFixed(2);
+  };
+
+  const formatQuantityInput = (value) => {
+    if (!value || value === 0) return '0.0';
+    return parseFloat(value).toFixed(1);
   };
 
   const getConfidenceColor = (score) => {
@@ -431,12 +436,15 @@ const InvoiceReviewDialog = ({
                     <TextField
                       fullWidth
                       label="Total Amount"
-                      type="number"
-                      value={editableInvoice.invoice_header.total_amount}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.total_amount) : formatCurrency(editableInvoice.invoice_header.total_amount)}
                       onChange={(e) => handleFieldChange('invoice_header', 'total_amount', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                   <Grid item xs={6}>
@@ -463,84 +471,105 @@ const InvoiceReviewDialog = ({
                     <TextField
                       fullWidth
                       label="Subtotal"
-                      type="number"
-                      value={editableInvoice.invoice_header.subtotal}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.subtotal) : formatCurrency(editableInvoice.invoice_header.subtotal)}
                       onChange={(e) => handleFieldChange('invoice_header', 'subtotal', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                   <Grid item xs={6}>
                     <TextField
                       fullWidth
                       label="Amount Due"
-                      type="number"
-                      value={editableInvoice.invoice_header.amount_due}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.amount_due) : formatCurrency(editableInvoice.invoice_header.amount_due)}
                       onChange={(e) => handleFieldChange('invoice_header', 'amount_due', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                   <Grid item xs={6}>
                     <TextField
                       fullWidth
                       label="Total Taxes"
-                      type="number"
-                      value={editableInvoice.invoice_header.total_taxes}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.total_taxes) : formatCurrency(editableInvoice.invoice_header.total_taxes)}
                       onChange={(e) => handleFieldChange('invoice_header', 'total_taxes', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                   <Grid item xs={6}>
                     <TextField
                       fullWidth
                       label="Total Fees"
-                      type="number"
-                      value={editableInvoice.invoice_header.total_fees}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.total_fees) : formatCurrency(editableInvoice.invoice_header.total_fees)}
                       onChange={(e) => handleFieldChange('invoice_header', 'total_fees', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                   <Grid item xs={4}>
                     <TextField
                       fullWidth
                       label="Recurring Total"
-                      type="number"
-                      value={editableInvoice.invoice_header.total_recurring}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.total_recurring) : formatCurrency(editableInvoice.invoice_header.total_recurring)}
                       onChange={(e) => handleFieldChange('invoice_header', 'total_recurring', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                   <Grid item xs={4}>
                     <TextField
                       fullWidth
                       label="One-Time Total"
-                      type="number"
-                      value={editableInvoice.invoice_header.total_one_time}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.total_one_time) : formatCurrency(editableInvoice.invoice_header.total_one_time)}
                       onChange={(e) => handleFieldChange('invoice_header', 'total_one_time', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                   <Grid item xs={4}>
                     <TextField
                       fullWidth
                       label="Usage Total"
-                      type="number"
-                      value={editableInvoice.invoice_header.total_usage}
+                      type={editMode ? "number" : "text"}
+                      value={editMode ? formatCurrencyInput(editableInvoice.invoice_header.total_usage) : formatCurrency(editableInvoice.invoice_header.total_usage)}
                       onChange={(e) => handleFieldChange('invoice_header', 'total_usage', parseFloat(e.target.value) || 0)}
                       disabled={!editMode}
                       size="small"
-                      InputProps={{ startAdornment: '$' }}
+                      InputProps={{ 
+                        startAdornment: editMode ? '$' : '',
+                        readOnly: !editMode
+                      }}
                     />
                   </Grid>
                 </Grid>
@@ -693,7 +722,7 @@ const InvoiceReviewDialog = ({
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ minWidth: 120 }}>Description</TableCell>
-                      <TableCell align="center" sx={{ width: 80 }}>Qty</TableCell>
+                      <TableCell align="right" sx={{ width: 80 }}>Qty</TableCell>
                       <TableCell align="right" sx={{ width: 80 }}>Unit Price</TableCell>
                       <TableCell align="right" sx={{ width: 80 }}>Total</TableCell>
                       {editMode && <TableCell align="center" sx={{ width: 50 }}>Actions</TableCell>}
@@ -719,19 +748,20 @@ const InvoiceReviewDialog = ({
                             </Typography>
                           )}
                         </TableCell>
-                        <TableCell align="center">
+                        <TableCell align="right">
                           {editMode ? (
                             <TextField
                               type="number"
-                              value={item.quantity}
+                              value={formatQuantityInput(item.quantity)}
                               onChange={(e) => handleLineItemChange(index, 'quantity', parseFloat(e.target.value) || 0)}
                               size="small"
                               variant="standard"
-                              sx={{ width: 60 }}
+                              sx={{ width: 60, textAlign: 'right' }}
+                              inputProps={{ step: "0.1" }}
                             />
                           ) : (
                             <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
-                              {item.quantity} {item.unit_of_measure}
+                              {formatQuantity(item.quantity, item.unit_of_measure)}
                             </Typography>
                           )}
                         </TableCell>
@@ -739,12 +769,13 @@ const InvoiceReviewDialog = ({
                           {editMode ? (
                             <TextField
                               type="number"
-                              value={item.unit_price}
+                              value={formatCurrencyInput(item.unit_price)}
                               onChange={(e) => handleLineItemChange(index, 'unit_price', parseFloat(e.target.value) || 0)}
                               size="small"
                               variant="standard"
                               sx={{ width: 70 }}
                               InputProps={{ startAdornment: '$' }}
+                              inputProps={{ step: "0.01" }}
                             />
                           ) : (
                             <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
@@ -756,12 +787,13 @@ const InvoiceReviewDialog = ({
                           {editMode ? (
                             <TextField
                               type="number"
-                              value={item.total_amount}
+                              value={formatCurrencyInput(item.total_amount)}
                               onChange={(e) => handleLineItemChange(index, 'total_amount', parseFloat(e.target.value) || 0)}
                               size="small"
                               variant="standard"
                               sx={{ width: 70 }}
                               InputProps={{ startAdornment: '$' }}
+                              inputProps={{ step: "0.01" }}
                             />
                           ) : (
                             <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 500 }}>

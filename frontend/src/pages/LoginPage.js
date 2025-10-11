@@ -9,7 +9,6 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material';
-import { BarChart3 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { brandColors } from '../theme/theme';
 
@@ -52,25 +51,18 @@ const LoginPage = () => {
       >
         <Box sx={{ textAlign: 'center', mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: '50%',
-                background: brandColors.techGradient,
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <BarChart3 size={32} />
-            </Box>
+            <img 
+              src="/WT_STACKED.png" 
+              alt="Waterfield Technologies Logo" 
+              style={{ 
+                height: '60px',
+                width: 'auto',
+                maxWidth: '200px'
+              }} 
+            />
           </Box>
           <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-            Invoice Processing
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Waterfield Technologies
+            Invoice Processing System
           </Typography>
         </Box>
 
