@@ -4,7 +4,7 @@ AI-powered invoice processing application for Waterfield Technologies, built wit
 
 ## 🎯 Overview
 
-This application processes vendor invoices (PDF and HTML) using Claude AI to extract structured data for the Accounts Receivable team. Features include automated data extraction, review workflows, vendor management, and export capabilities.
+This application processes vendor invoices (PDF and HTML) using Claude AI to extract structured data for the Accounts Receivable team. Features include automated data extraction, batch processing workflows, real-time monitoring, vendor management, and comprehensive invoice management capabilities.
 
 ## 🏗️ Architecture
 
@@ -136,27 +136,36 @@ Key tables:
 - `vendors` - Vendor configuration and prompts
 - `customers` - Customer records with aliases
 - `extraction_prompts` - Claude AI prompts with versioning
-- `processing_batches` - Batch processing tracking
+- `processing_batches` - Batch processing tracking and status
+- `batch_files` - Individual file tracking within batches
 
 ## 🔧 Development Workflow
 
-### Current Status: ✅ Invoice Management System Complete
+### Current Status: ✅ Batch Processing System Complete
 
 **✅ Completed Features:**
 - **Full Authentication System**: JWT-based auth with auto-demo user
 - **PDF Processing Engine**: Real document extraction with pdf-parse integration
 - **Claude AI Integration**: Structured data extraction with confidence scoring
+- **Batch Processing System**: Multi-file upload with real-time monitoring
+  - **Import Invoices Page**: 3-step workflow (vendor → files → processing)
+  - **Batch Management**: Complete dashboard with filtering and history
+  - **Real-Time Progress**: Live tracking with file-level status updates
+  - **Performance Optimized**: 80% reduction in API calls through smart polling
 - **Invoice Upload & Processing**: Multi-format file handling (PDF, HTML)
-- **Review & Approval Workflow**: Split-screen interface with navigation
-- **Invoice Management**: Complete CRUD with view/delete operations
+- **Review & Approval Workflow**: Split-screen interface with navigation and batch filtering
+- **Invoice Management**: Complete CRUD with view/delete operations and batch tracking
 - **Vendor Management**: Full vendor configuration system
+- **Prompts Management**: AI prompt editing, testing, and versioning system
 - **Smart Navigation**: Back/Next buttons with auto-advance
 - **Data Export**: CSV/Excel export capabilities
 - **Responsive UI**: Professional Material-UI with Waterfield branding
 
 **🚧 Next Phase:**
-- **Prompts Management**: Claude prompt editing, testing, and versioning
-- **Advanced Analytics**: Processing metrics and reporting
+- **Advanced Analytics**: Processing metrics and reporting dashboard
+- **Export Enhancements**: Batch-aware export capabilities
+- **Performance Monitoring**: System health and usage analytics
+- **Integration APIs**: Webhook support for external system integration
 - **Bulk Operations**: Batch processing and approval workflows
 
 ### Available Scripts
