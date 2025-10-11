@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -23,7 +23,6 @@ import {
   IconButton,
   Tooltip,
   Alert,
-  CircularProgress,
   LinearProgress,
 } from '@mui/material';
 import {
@@ -34,7 +33,6 @@ import {
   FileText,
   Filter,
   Search,
-  Download,
   TrendingUp,
   AlertTriangle,
   Trash2,
@@ -45,6 +43,8 @@ import InvoiceReviewDialog from '../components/InvoiceReviewDialog';
 
 const ReviewPage = () => {
   const [invoices, setInvoices] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -54,6 +54,7 @@ const ReviewPage = () => {
   const [filters, setFilters] = useState({
     status: 'none', // Default to showing no items
     vendor: '',
+    batch: '',
     search: '',
     dateRange: 'all'
   });
@@ -69,20 +70,7 @@ const ReviewPage = () => {
     avgConfidence: 0
   });
 
-  // Load invoices on component mount and filter changes
-  useEffect(() => {
-    loadInvoices();
-  }, [filters, page, rowsPerPage]);
-
-  // Auto-switch to "processed" status when there are pending reviews and currently on "none"
-  useEffect(() => {
-    if (filters.status === 'none' && stats.pending > 0) {
-      console.log(`Found ${stats.pending} pending reviews, auto-switching to "processed" status`);
-      setFilters(prev => ({ ...prev, status: 'processed' }));
-    }
-  }, [stats.pending, filters.status]);
-
-  const loadInvoices = async () => {
+  const loadInvoices = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -110,6 +98,7 @@ const ReviewPage = () => {
         offset: page * rowsPerPage,
         ...(filters.status && { status: filters.status }),
         ...(filters.vendor && { vendor_id: filters.vendor }),
+        ...(filters.batch && { batch_name: filters.batch }),
       });
 
       const response = await axios.get(`/api/invoices?${params}`);
@@ -132,6 +121,46 @@ const ReviewPage = () => {
       setError('Failed to load invoices');
     } finally {
       setLoading(false);
+    }
+  }, [filters, page, rowsPerPage]);
+
+  // Load invoices on component mount and filter changes
+  useEffect(() => {
+    loadInvoices();
+  }, [loadInvoices]);
+
+  // Load vendors and batches once on component mount
+  useEffect(() => {
+    loadVendors();
+    loadBatches();
+  }, []);
+
+  // Auto-switch to "processed" status when there are pending reviews and currently on "none"
+  useEffect(() => {
+    if (filters.status === 'none' && stats.pending > 0) {
+      console.log(`Found ${stats.pending} pending reviews, auto-switching to "processed" status`);
+      setFilters(prev => ({ ...prev, status: 'processed' }));
+    }
+  }, [stats.pending, filters.status]);
+
+  const loadVendors = async () => {
+    try {
+      const response = await axios.get('/api/vendors');
+      setVendors(response.data.vendors || []);
+    } catch (err) {
+      console.error('Failed to load vendors:', err);
+    }
+  };
+
+  const loadBatches = async () => {
+    try {
+      const response = await axios.get('/api/batches/names', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      setBatches(response.data.batches);
+    } catch (err) {
+      console.error('Failed to load batches:', err);
+      setBatches([]);
     }
   };
 
@@ -186,11 +215,9 @@ const ReviewPage = () => {
 
   // Navigation helper functions
   const getPendingInvoices = () => {
-    console.log('All invoice statuses:', invoices.map(inv => ({id: inv.id, status: inv.status, processing_status: inv.processing_status})));
     const pendingInvoices = invoices.filter(invoice => 
       invoice.processing_status === 'processed' && !invoice.approved_at && !invoice.rejected_at
     );
-    console.log('Pending invoices for review:', pendingInvoices.length, 'Total invoices:', invoices.length);
     return pendingInvoices;
   };
 
@@ -239,6 +266,7 @@ const ReviewPage = () => {
       search: '',
       status: 'none', // Reset to default "none" status
       vendor: '',
+      batch: '',
       dateRange: 'all'
     });
     setPage(0);
@@ -396,7 +424,7 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={2.4}>
+          <Grid item xs={12} sm={6} md={2}>
             <FormControl fullWidth>
               <InputLabel>Vendor</InputLabel>
               <Select
@@ -405,12 +433,33 @@ const ReviewPage = () => {
                 onChange={(e) => handleFilterChange('vendor', e.target.value)}
               >
                 <MenuItem value="">All Vendors</MenuItem>
-                <MenuItem value="genesys">Genesys</MenuItem>
-                <MenuItem value="five9">Five9</MenuItem>
+                {vendors.map((vendor) => (
+                  <MenuItem key={vendor.id} value={vendor.id}>
+                    {vendor.display_name || vendor.name}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={2.4}>
+          <Grid item xs={12} sm={6} md={2}>
+            <FormControl fullWidth>
+              <InputLabel>Batch</InputLabel>
+              <Select
+                value={filters.batch}
+                label="Batch"
+                onChange={(e) => handleFilterChange('batch', e.target.value)}
+              >
+                <MenuItem value="">All Batches</MenuItem>
+                <MenuItem value="Single Upload">Single Uploads</MenuItem>
+                {batches.map((batch) => (
+                  <MenuItem key={batch.name} value={batch.name}>
+                    {batch.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={2}>
             <FormControl fullWidth>
               <InputLabel>Date Range</InputLabel>
               <Select
@@ -425,7 +474,7 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={2.4}>
+          <Grid item xs={12} sm={6} md={2}>
             <Button
               variant="outlined"
               startIcon={<Trash2 size={16} />}
@@ -450,6 +499,7 @@ const ReviewPage = () => {
                 <TableCell>Invoice #</TableCell>
                 <TableCell>Vendor</TableCell>
                 <TableCell>Customer</TableCell>
+                <TableCell>Batch</TableCell>
                 <TableCell>Date</TableCell>
                 <TableCell>Amount</TableCell>
                 <TableCell>Confidence</TableCell>
@@ -470,6 +520,11 @@ const ReviewPage = () => {
                   </TableCell>
                   <TableCell>{invoice.vendor_display_name}</TableCell>
                   <TableCell>{invoice.customer_name}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">
+                      {invoice.batch_name || 'Single Upload'}
+                    </Typography>
+                  </TableCell>
                   <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
                   <TableCell>{formatCurrency(invoice.total_amount)}</TableCell>
                   <TableCell>
@@ -560,12 +615,10 @@ const ReviewPage = () => {
         }}
         hasNext={(() => {
           const hasNext = getNextPendingInvoice() !== null;
-          console.log('hasNext:', hasNext, 'Next invoice:', getNextPendingInvoice()?.invoice_number);
           return hasNext;
         })()}
         hasPrevious={(() => {
           const hasPrev = getPreviousPendingInvoice() !== null;
-          console.log('hasPrevious:', hasPrev, 'Previous invoice:', getPreviousPendingInvoice()?.invoice_number);
           return hasPrev;
         })()}
       />

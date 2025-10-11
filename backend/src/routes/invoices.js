@@ -33,6 +33,7 @@ router.get('/', authenticateToken, async (req, res) => {
       vendor_id, 
       customer_id, 
       status, 
+      batch_name,
       start_date, 
       end_date, 
       limit = 50, 
@@ -61,6 +62,16 @@ router.get('/', authenticateToken, async (req, res) => {
       paramCount++;
     }
 
+    if (batch_name) {
+      if (batch_name === 'Single Upload') {
+        whereClause += ` AND pb.id IS NULL`;
+      } else {
+        whereClause += ` AND CONCAT('Batch-', EXTRACT(YEAR FROM pb.created_at), '-', EXTRACT(MONTH FROM pb.created_at), '-', EXTRACT(DAY FROM pb.created_at), '-', RIGHT(pb.id::text, 8)) = $${paramCount}`;
+        params.push(batch_name);
+        paramCount++;
+      }
+    }
+
     if (start_date) {
       whereClause += ` AND i.invoice_date >= $${paramCount}`;
       params.push(start_date);
@@ -79,13 +90,21 @@ router.get('/', authenticateToken, async (req, res) => {
         v.name as vendor_name,
         v.display_name as vendor_display_name,
         COALESCE(c.name, i.customer_name) as customer_name,
-        COUNT(li.id) as line_item_count
+        COUNT(li.id) as line_item_count,
+        pb.id as batch_id,
+        pb.created_at as batch_created_at,
+        CASE 
+          WHEN pb.id IS NOT NULL THEN CONCAT('Batch-', EXTRACT(YEAR FROM pb.created_at), '-', EXTRACT(MONTH FROM pb.created_at), '-', EXTRACT(DAY FROM pb.created_at), '-', RIGHT(pb.id::text, 8))
+          ELSE 'Single Upload'
+        END as batch_name
       FROM invoices i
       LEFT JOIN vendors v ON i.vendor_id = v.id
       LEFT JOIN customers c ON i.customer_id = c.id
       LEFT JOIN line_items li ON i.id = li.invoice_id
+      LEFT JOIN batch_files bf ON i.id = bf.invoice_id
+      LEFT JOIN processing_batches pb ON bf.batch_id = pb.id
       ${whereClause}
-      GROUP BY i.id, v.name, v.display_name, c.name, i.customer_name
+      GROUP BY i.id, v.name, v.display_name, c.name, i.customer_name, pb.id, pb.created_at
       ORDER BY i.created_at DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
@@ -633,10 +652,13 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     const invoice = invoiceResult.rows[0];
     const filePath = invoice.file_path;
 
-    // Delete from database (cascade should handle line_items)
+    // Delete from database (handle all foreign key dependencies)
     await transaction(async (client) => {
       // Delete line items first
       await client.query('DELETE FROM line_items WHERE invoice_id = $1', [id]);
+      
+      // Clear batch_files references (set invoice_id to NULL instead of deleting)
+      await client.query('UPDATE batch_files SET invoice_id = NULL WHERE invoice_id = $1', [id]);
       
       // Delete invoice
       await client.query('DELETE FROM invoices WHERE id = $1', [id]);
@@ -666,7 +688,19 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error permanently deleting invoice:', error);
-    res.status(500).json({ error: 'Failed to delete invoice' });
+    
+    // Provide more specific error information
+    let errorMessage = 'Failed to delete invoice';
+    if (error.code === '23503') {
+      errorMessage = 'Cannot delete invoice: it is referenced by other records';
+    } else if (error.code === '23505') {
+      errorMessage = 'Cannot delete invoice: duplicate key constraint';
+    }
+    
+    res.status(500).json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

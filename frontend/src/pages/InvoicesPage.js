@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -24,7 +24,6 @@ import {
   Tooltip,
   Alert,
   CircularProgress,
-  LinearProgress,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -39,8 +38,6 @@ import {
   FileText,
   Filter,
   Search,
-  Download,
-  TrendingUp,
   AlertTriangle,
   Trash2,
   Database,
@@ -76,19 +73,11 @@ const InvoicesPage = () => {
     rejected: 0
   });
 
-  // Load invoices on component mount and filter changes
-  useEffect(() => {
-    loadInvoices();
-  }, [filters, page, rowsPerPage]);
-
-  // Load vendors once on component mount
-  useEffect(() => {
-    loadVendors();
-  }, []);
-
-  const loadInvoices = async () => {
+  const loadInvoices = useCallback(async () => {
     try {
       setLoading(true);
+      setError(''); // Clear any previous errors
+      
       const params = new URLSearchParams({
         page: page + 1,
         limit: rowsPerPage,
@@ -98,32 +87,73 @@ const InvoicesPage = () => {
         ...(filters.dateRange !== 'all' && { date_range: filters.dateRange })
       });
 
-      const response = await axios.get(`/api/invoices?${params}`);
-      setInvoices(response.data.invoices);
-
-      // Calculate stats from all invoices
-      const totalInvoices = response.data.total_invoices || response.data.invoices;
-      setStats({
-        total: Array.isArray(totalInvoices) ? totalInvoices.length : response.data.total || 0,
-        pending: totalInvoices.filter(inv => inv.processing_status === 'processed').length,
-        approved: totalInvoices.filter(inv => inv.processing_status === 'approved').length,
-        rejected: totalInvoices.filter(inv => inv.processing_status === 'rejected').length,
+      const response = await axios.get(`/api/invoices?${params}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
+      
+      // Ensure we have valid data
+      if (response.data && Array.isArray(response.data.invoices)) {
+        setInvoices(response.data.invoices);
+
+        // Calculate stats from all invoices
+        const totalInvoices = response.data.total_invoices || response.data.invoices;
+        setStats({
+          total: Array.isArray(totalInvoices) ? totalInvoices.length : response.data.total || 0,
+          pending: totalInvoices.filter(inv => inv.processing_status === 'processed').length,
+          approved: totalInvoices.filter(inv => inv.processing_status === 'approved').length,
+          rejected: totalInvoices.filter(inv => inv.processing_status === 'rejected').length,
+        });
+      } else {
+        throw new Error('Invalid response data format');
+      }
     } catch (err) {
       console.error('Failed to load invoices:', err);
-      setError('Failed to load invoices');
+      
+      // Handle different error types
+      if (err.response?.status === 429) {
+        setError('Too many requests. Please wait a moment and try refreshing the page.');
+      } else if (err.response?.status === 401) {
+        setError('Authentication expired. Please refresh the page to log in again.');
+      } else if (err.response?.status === 500) {
+        setError('Server error. Please try again in a moment.');
+      } else if (err.code === 'NETWORK_ERROR' || !err.response) {
+        setError('Network error. Please check your connection and try again.');
+      } else {
+        setError(`Failed to load invoices: ${err.response?.data?.error || err.message}`);
+      }
+      
+      setInvoices([]); // Reset to empty array to prevent undefined errors
+      setStats({ total: 0, pending: 0, approved: 0, rejected: 0 });
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, page, rowsPerPage]);
+
+  // Load invoices on component mount and filter changes
+  useEffect(() => {
+    loadInvoices();
+  }, [loadInvoices]);
+
+  // Load vendors once on component mount
+  useEffect(() => {
+    loadVendors();
+  }, []);
 
   const loadVendors = async () => {
     try {
-      const response = await axios.get('/api/vendors');
+      const response = await axios.get('/api/vendors', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
       setVendors(response.data.vendors || []);
     } catch (err) {
       console.error('Failed to load vendors:', err);
-      // Don't set error for vendors, it's not critical
+      
+      // Handle authentication errors specifically
+      if (err.response?.status === 401) {
+        console.warn('Authentication expired when loading vendors');
+        // Could redirect to login or show notification
+      }
+      // Don't set error for vendors, it's not critical for main functionality
     }
   };
 
@@ -154,16 +184,34 @@ const InvoicesPage = () => {
       
       if (invoiceToDelete) {
         // Single invoice delete
-        await axios.delete(`/api/invoices/${invoiceToDelete.id}`);
+        await axios.delete(`/api/invoices/${invoiceToDelete.id}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
         console.log(`Invoice ${invoiceToDelete.invoice_number} deleted successfully`);
       } else if (selectedInvoices.size > 0) {
-        // Bulk delete
-        const deletePromises = Array.from(selectedInvoices).map(id => 
-          axios.delete(`/api/invoices/${id}`)
-        );
-        await Promise.all(deletePromises);
-        console.log(`${selectedInvoices.size} invoices deleted successfully`);
+        // Bulk delete - handle each request individually to get better error reporting
+        let successCount = 0;
+        let errorCount = 0;
+        const selectedIds = Array.from(selectedInvoices);
+        
+        for (const id of selectedIds) {
+          try {
+            await axios.delete(`/api/invoices/${id}`, {
+              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+            successCount++;
+          } catch (err) {
+            console.error(`Failed to delete invoice ${id}:`, err);
+            errorCount++;
+          }
+        }
+        
+        console.log(`Bulk delete completed: ${successCount} successful, ${errorCount} failed`);
         setSelectedInvoices(new Set());
+        
+        if (errorCount > 0) {
+          setError(`${successCount} invoices deleted successfully. ${errorCount} failed to delete.`);
+        }
       }
       
       // Refresh the list

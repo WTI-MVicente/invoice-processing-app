@@ -14,10 +14,10 @@ import {
   Upload,
   CheckCircle,
   Building2,
-  Users,
   Code,
   Download,
   Database,
+  Layers,
 } from 'lucide-react';
 import { brandColors } from '../../theme/theme';
 
@@ -25,6 +25,7 @@ const menuItems = [
   { key: 'import', label: 'Import Invoices', icon: Upload, path: '/import' },
   { key: 'review', label: 'Review & Approve', icon: CheckCircle, path: '/review' },
   { key: 'invoices', label: 'Invoices', icon: Database, path: '/invoices' },
+  { key: 'batches', label: 'Batch Management', icon: Layers, path: '/batches' },
   { key: 'vendors', label: 'Vendors', icon: Building2, path: '/vendors' },
   { key: 'prompts', label: 'Prompts', icon: Code, path: '/prompts' },
   { key: 'export', label: 'Export', icon: Download, path: '/export' },

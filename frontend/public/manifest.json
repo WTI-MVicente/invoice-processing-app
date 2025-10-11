@@ -1,0 +1,21 @@
+{
+  "short_name": "Invoice Processing",
+  "name": "Waterfield Technologies - Invoice Processing",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "logo192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#1B4B8C",
+  "background_color": "#ffffff",
+  "description": "AI-powered invoice processing application for Waterfield Technologies"
+}

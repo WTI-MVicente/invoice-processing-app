@@ -35,7 +35,6 @@ const Layout = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          marginLeft: '240px',
           marginTop: '64px',
           height: 'calc(100vh - 64px)',
           overflow: 'auto',

@@ -9,19 +9,24 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust proxy for rate limiting (fixes X-Forwarded-For warnings)
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// Rate limiting
+// Rate limiting - more permissive in development
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || (process.env.NODE_ENV === 'development' ? 1000 : 100), // 1000 for dev, 100 for prod
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for development if desired  
+  skip: (req, res) => process.env.NODE_ENV === 'development' // Skip all rate limiting in development
 });
 app.use('/api', limiter);
 
@@ -53,6 +58,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/vendors', require('./routes/vendors'));
 app.use('/api/invoices', require('./routes/invoices'));
+app.use('/api/batches', require('./routes/batches'));
 app.use('/api/test', require('./routes/test'));
 // app.use('/api/customers', require('./routes/customers'));
 app.use('/api/prompts', require('./routes/prompts'));
