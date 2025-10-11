@@ -24,6 +24,7 @@ import {
   Tooltip,
   Alert,
   LinearProgress,
+  CircularProgress,
 } from '@mui/material';
 import {
   CheckCircle,
@@ -36,9 +37,11 @@ import {
   TrendingUp,
   AlertTriangle,
   Trash2,
+  X,
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
+import { formatCurrency } from '../utils/formatters';
 import InvoiceReviewDialog from '../components/InvoiceReviewDialog';
 
 const ReviewPage = () => {
@@ -58,6 +61,8 @@ const ReviewPage = () => {
     search: '',
     dateRange: 'all'
   });
+  const [searchInput, setSearchInput] = useState(''); // Separate state for search input
+  const [isSearching, setIsSearching] = useState(false); // Loading state for search debounce
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   
@@ -69,6 +74,7 @@ const ReviewPage = () => {
     rejected: 0,
     avgConfidence: 0
   });
+  const [filteredTotal, setFilteredTotal] = useState(0);
 
   const loadInvoices = useCallback(async () => {
     try {
@@ -77,11 +83,11 @@ const ReviewPage = () => {
       // If status is 'none', show empty table
       if (filters.status === 'none') {
         setInvoices([]);
-        // Still load stats for the summary cards
-        const statsResponse = await axios.get('/api/invoices');
-        const totalInvoices = statsResponse.data.invoices;
+        // Still load stats for the summary cards - get ALL invoices for accurate stats
+        const statsResponse = await axios.get('/api/invoices?limit=10000');
+        const totalInvoices = statsResponse.data.invoices || [];
         setStats({
-          total: totalInvoices.length,
+          total: statsResponse.data.total || totalInvoices.length,
           pending: totalInvoices.filter(inv => inv.processing_status === 'processed').length,
           approved: totalInvoices.filter(inv => inv.processing_status === 'approved').length,
           rejected: totalInvoices.filter(inv => inv.processing_status === 'rejected').length,
@@ -96,6 +102,7 @@ const ReviewPage = () => {
       const params = new URLSearchParams({
         limit: rowsPerPage,
         offset: page * rowsPerPage,
+        ...(filters.search && { search: filters.search }),
         ...(filters.status && { status: filters.status }),
         ...(filters.vendor && { vendor_id: filters.vendor }),
         ...(filters.batch && { batch_name: filters.batch }),
@@ -103,18 +110,35 @@ const ReviewPage = () => {
 
       const response = await axios.get(`/api/invoices?${params}`);
       setInvoices(response.data.invoices);
+      setFilteredTotal(response.data.total || response.data.invoices.length);
       
-      // Calculate summary stats
-      const totalInvoices = response.data.invoices;
-      setStats({
-        total: totalInvoices.length,
-        pending: totalInvoices.filter(inv => inv.processing_status === 'processed').length,
-        approved: totalInvoices.filter(inv => inv.processing_status === 'approved').length,
-        rejected: totalInvoices.filter(inv => inv.processing_status === 'rejected').length,
-        avgConfidence: totalInvoices.length > 0 
-          ? (totalInvoices.reduce((sum, inv) => sum + (inv.confidence_score || 0), 0) / totalInvoices.length * 100).toFixed(1)
-          : 0
-      });
+      // Get statistics from ALL invoices, not just the filtered/paginated results
+      try {
+        const statsResponse = await axios.get('/api/invoices?limit=10000');
+        const allInvoices = statsResponse.data.invoices || [];
+        setStats({
+          total: statsResponse.data.total || allInvoices.length,
+          pending: allInvoices.filter(inv => inv.processing_status === 'processed').length,
+          approved: allInvoices.filter(inv => inv.processing_status === 'approved').length,
+          rejected: allInvoices.filter(inv => inv.processing_status === 'rejected').length,
+          avgConfidence: allInvoices.length > 0 
+            ? (allInvoices.reduce((sum, inv) => sum + (inv.confidence_score || 0), 0) / allInvoices.length * 100).toFixed(1)
+            : 0
+        });
+      } catch (statsError) {
+        console.error('Failed to load statistics:', statsError);
+        // Fallback to filtered data if stats call fails
+        const filteredInvoices = response.data.invoices || [];
+        setStats({
+          total: response.data.total || filteredInvoices.length,
+          pending: filteredInvoices.filter(inv => inv.processing_status === 'processed').length,
+          approved: filteredInvoices.filter(inv => inv.processing_status === 'approved').length,
+          rejected: filteredInvoices.filter(inv => inv.processing_status === 'rejected').length,
+          avgConfidence: filteredInvoices.length > 0 
+            ? (filteredInvoices.reduce((sum, inv) => sum + (inv.confidence_score || 0), 0) / filteredInvoices.length * 100).toFixed(1)
+            : 0
+        });
+      }
       
     } catch (err) {
       console.error('Failed to load invoices:', err);
@@ -142,6 +166,21 @@ const ReviewPage = () => {
       setFilters(prev => ({ ...prev, status: 'processed' }));
     }
   }, [stats.pending, filters.status]);
+
+  // Debounced search effect
+  useEffect(() => {
+    if (searchInput !== filters.search) {
+      setIsSearching(true);
+    }
+    
+    const timeoutId = setTimeout(() => {
+      setFilters(prev => ({ ...prev, search: searchInput }));
+      setPage(0); // Reset to first page when searching
+      setIsSearching(false);
+    }, 500); // 500ms debounce delay
+
+    return () => clearTimeout(timeoutId);
+  }, [searchInput, filters.search]);
 
   const loadVendors = async () => {
     try {
@@ -269,6 +308,7 @@ const ReviewPage = () => {
       batch: '',
       dateRange: 'all'
     });
+    setSearchInput(''); // Also clear the search input state
     setPage(0);
     setRowsPerPage(10);
     // Force reload of invoices
@@ -303,12 +343,7 @@ const ReviewPage = () => {
     return 'error';
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount || 0);
-  };
+  // formatCurrency now imported from utils/formatters.js
 
   const formatDate = (dateString) => {
     try {
@@ -392,19 +427,31 @@ const ReviewPage = () => {
 
       {/* Filters */}
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Box display="flex" alignItems="center" gap={2} mb={2}>
-          <Filter size={20} />
-          <Typography variant="h6">Filters</Typography>
+        <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+          <Box display="flex" alignItems="center" gap={2}>
+            <Filter size={20} />
+            <Typography variant="h6">Filters</Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<X size={16} />}
+            onClick={handleClearInvoices}
+            disabled={!filters.search && filters.status === 'none' && !filters.vendor && !filters.batch && filters.dateRange === 'all'}
+          >
+            Clear Filters
+          </Button>
         </Box>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={2.4}>
             <TextField
               fullWidth
               placeholder="Search invoices..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange('search', e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               InputProps={{
-                startAdornment: <Search size={20} style={{ marginRight: 8, color: '#666' }} />
+                startAdornment: <Search size={20} style={{ marginRight: 8, color: '#666' }} />,
+                endAdornment: isSearching && <CircularProgress size={20} />
               }}
             />
           </Grid>
@@ -424,7 +471,7 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={2}>
+          <Grid item xs={12} sm={6} md={2.4}>
             <FormControl fullWidth>
               <InputLabel>Vendor</InputLabel>
               <Select
@@ -441,7 +488,7 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={2}>
+          <Grid item xs={12} sm={6} md={2.4}>
             <FormControl fullWidth>
               <InputLabel>Batch</InputLabel>
               <Select
@@ -459,7 +506,7 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={2}>
+          <Grid item xs={12} sm={6} md={2.4}>
             <FormControl fullWidth>
               <InputLabel>Date Range</InputLabel>
               <Select
@@ -474,20 +521,17 @@ const ReviewPage = () => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={2}>
-            <Button
-              variant="outlined"
-              startIcon={<Trash2 size={16} />}
-              onClick={handleClearInvoices}
-              color="warning"
-              fullWidth
-              sx={{ height: '56px' }} // Match the height of Select components
-            >
-              Clear View
-            </Button>
-          </Grid>
         </Grid>
       </Paper>
+
+      {/* Search Results Info */}
+      {filters.search && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <Typography variant="body2">
+            Showing {filteredTotal} result{filteredTotal !== 1 ? 's' : ''} for "{filters.search}"
+          </Typography>
+        </Alert>
+      )}
 
       {/* Invoice Table */}
       <Paper>
@@ -501,8 +545,8 @@ const ReviewPage = () => {
                 <TableCell>Customer</TableCell>
                 <TableCell>Batch</TableCell>
                 <TableCell>Date</TableCell>
-                <TableCell>Amount</TableCell>
-                <TableCell>Confidence</TableCell>
+                <TableCell align="right">Amount</TableCell>
+                <TableCell align="right">Confidence</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
@@ -526,9 +570,9 @@ const ReviewPage = () => {
                     </Typography>
                   </TableCell>
                   <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
-                  <TableCell>{formatCurrency(invoice.total_amount)}</TableCell>
-                  <TableCell>
-                    <Box display="flex" alignItems="center" gap={1}>
+                  <TableCell align="right">{formatCurrency(invoice.total_amount)}</TableCell>
+                  <TableCell align="right">
+                    <Box display="flex" alignItems="center" gap={1} justifyContent="flex-end">
                       <LinearProgress
                         variant="determinate"
                         value={(invoice.confidence_score || 0) * 100}
@@ -586,7 +630,7 @@ const ReviewPage = () => {
         <TablePagination
           rowsPerPageOptions={[10, 25, 50]}
           component="div"
-          count={stats.total}
+          count={filteredTotal}
           rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={(event, newPage) => setPage(newPage)}
