@@ -281,8 +281,8 @@ const BatchesPage = () => {
                 <TableCell>Batch ID</TableCell>
                 <TableCell>Vendor</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Progress</TableCell>
-                <TableCell>Files</TableCell>
+                <TableCell align="right">Progress</TableCell>
+                <TableCell align="right">Files</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
@@ -308,8 +308,8 @@ const BatchesPage = () => {
                       icon={getStatusIcon(batch.status)}
                     />
                   </TableCell>
-                  <TableCell>
-                    <Box sx={{ width: '100px' }}>
+                  <TableCell align="right">
+                    <Box sx={{ width: '100px', textAlign: 'right' }}>
                       <LinearProgress 
                         variant="determinate" 
                         value={calculateProgress(batch)} 
@@ -320,7 +320,7 @@ const BatchesPage = () => {
                       </Typography>
                     </Box>
                   </TableCell>
-                  <TableCell>
+                  <TableCell align="right">
                     <Typography variant="body2">
                       {batch.processed_count || 0}/{batch.total_file_count || 0}
                     </Typography>

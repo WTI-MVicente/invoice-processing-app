@@ -34,6 +34,7 @@ router.get('/', authenticateToken, async (req, res) => {
       customer_id, 
       status, 
       batch_name,
+      search,
       start_date, 
       end_date, 
       limit = 50, 
@@ -84,6 +85,17 @@ router.get('/', authenticateToken, async (req, res) => {
       paramCount++;
     }
 
+    if (search) {
+      // Search across invoice_number, customer_name, and purchase_order_number
+      whereClause += ` AND (
+        i.invoice_number ILIKE $${paramCount} OR 
+        COALESCE(c.name, i.customer_name) ILIKE $${paramCount} OR 
+        i.purchase_order_number ILIKE $${paramCount}
+      )`;
+      params.push(`%${search}%`);
+      paramCount++;
+    }
+
     const invoicesQuery = `
       SELECT 
         i.*,
@@ -112,13 +124,28 @@ router.get('/', authenticateToken, async (req, res) => {
     params.push(parseInt(limit), parseInt(offset));
 
     const result = await query(invoicesQuery, params);
+    
+    // Get total count for pagination (without LIMIT/OFFSET)
+    const countQuery = `
+      SELECT COUNT(DISTINCT i.id) as total
+      FROM invoices i
+      LEFT JOIN vendors v ON i.vendor_id = v.id
+      LEFT JOIN customers c ON i.customer_id = c.id
+      LEFT JOIN line_items li ON i.id = li.invoice_id
+      LEFT JOIN batch_files bf ON i.id = bf.invoice_id
+      LEFT JOIN processing_batches pb ON bf.batch_id = pb.id
+      ${whereClause}
+    `;
+    
+    const countResult = await query(countQuery, params.slice(0, -2)); // Remove limit and offset params
 
     res.json({
       invoices: result.rows,
+      total: parseInt(countResult.rows[0].total),
       pagination: {
         limit: parseInt(limit),
         offset: parseInt(offset),
-        total: result.rows.length
+        total: parseInt(countResult.rows[0].total)
       }
     });
 

@@ -24,6 +24,7 @@ import {
   Tooltip,
   Alert,
   CircularProgress,
+  LinearProgress,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -41,9 +42,11 @@ import {
   AlertTriangle,
   Trash2,
   Database,
+  X,
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
+import { formatCurrency, formatQuantity } from '../utils/formatters';
 
 const InvoicesPage = () => {
   const [invoices, setInvoices] = useState([]);
@@ -64,6 +67,8 @@ const InvoicesPage = () => {
     vendor: '',
     dateRange: 'all'
   });
+  const [searchInput, setSearchInput] = useState(''); // Separate state for search input
+  const [isSearching, setIsSearching] = useState(false); // Loading state for search debounce
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [stats, setStats] = useState({
@@ -72,6 +77,7 @@ const InvoicesPage = () => {
     approved: 0,
     rejected: 0
   });
+  const [filteredTotal, setFilteredTotal] = useState(0);
 
   const loadInvoices = useCallback(async () => {
     try {
@@ -94,15 +100,31 @@ const InvoicesPage = () => {
       // Ensure we have valid data
       if (response.data && Array.isArray(response.data.invoices)) {
         setInvoices(response.data.invoices);
+        setFilteredTotal(response.data.total || response.data.invoices.length);
 
-        // Calculate stats from all invoices
-        const totalInvoices = response.data.total_invoices || response.data.invoices;
-        setStats({
-          total: Array.isArray(totalInvoices) ? totalInvoices.length : response.data.total || 0,
-          pending: totalInvoices.filter(inv => inv.processing_status === 'processed').length,
-          approved: totalInvoices.filter(inv => inv.processing_status === 'approved').length,
-          rejected: totalInvoices.filter(inv => inv.processing_status === 'rejected').length,
-        });
+        // Make separate API call to get statistics for all invoices (not paginated)
+        try {
+          const statsResponse = await axios.get('/api/invoices?limit=10000', {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          
+          const allInvoices = statsResponse.data.invoices || [];
+          setStats({
+            total: statsResponse.data.total || allInvoices.length,
+            pending: allInvoices.filter(inv => inv.processing_status === 'processed').length,
+            approved: allInvoices.filter(inv => inv.processing_status === 'approved').length,
+            rejected: allInvoices.filter(inv => inv.processing_status === 'rejected').length,
+          });
+        } catch (statsError) {
+          console.error('Failed to load statistics:', statsError);
+          // Fallback to paginated data if stats call fails
+          setStats({
+            total: response.data.total || response.data.invoices.length,
+            pending: response.data.invoices.filter(inv => inv.processing_status === 'processed').length,
+            approved: response.data.invoices.filter(inv => inv.processing_status === 'approved').length,
+            rejected: response.data.invoices.filter(inv => inv.processing_status === 'rejected').length,
+          });
+        }
       } else {
         throw new Error('Invalid response data format');
       }
@@ -128,6 +150,21 @@ const InvoicesPage = () => {
       setLoading(false);
     }
   }, [filters, page, rowsPerPage]);
+
+  // Debounced search effect
+  useEffect(() => {
+    if (searchInput !== filters.search) {
+      setIsSearching(true);
+    }
+    
+    const timeoutId = setTimeout(() => {
+      setFilters(prev => ({ ...prev, search: searchInput }));
+      setPage(0); // Reset to first page when searching
+      setIsSearching(false);
+    }, 500); // 500ms debounce delay
+
+    return () => clearTimeout(timeoutId);
+  }, [searchInput, filters.search]);
 
   // Load invoices on component mount and filter changes
   useEffect(() => {
@@ -160,6 +197,17 @@ const InvoicesPage = () => {
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(0); // Reset to first page when filtering
+  };
+
+  const handleClearFilters = () => {
+    setFilters({
+      search: '',
+      status: '',
+      vendor: '',
+      dateRange: 'all'
+    });
+    setSearchInput('');
+    setPage(0);
   };
 
   const handleViewInvoice = async (invoice) => {
@@ -247,13 +295,7 @@ const InvoicesPage = () => {
     );
   };
 
-  const formatCurrency = (amount) => {
-    if (!amount) return '$0.00';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
+  // formatCurrency now imported from utils/formatters.js
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -264,13 +306,7 @@ const InvoicesPage = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
+  // Remove the full-screen loading state - we'll handle it inline
 
   return (
     <Box sx={{ p: 3 }}>
@@ -357,19 +393,31 @@ const InvoicesPage = () => {
 
       {/* Filters */}
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Box display="flex" alignItems="center" gap={2} mb={2}>
-          <Filter size={20} />
-          <Typography variant="h6">Filters</Typography>
+        <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+          <Box display="flex" alignItems="center" gap={2}>
+            <Filter size={20} />
+            <Typography variant="h6">Filters</Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<X size={16} />}
+            onClick={handleClearFilters}
+            disabled={!filters.search && !filters.status && !filters.vendor && filters.dateRange === 'all'}
+          >
+            Clear Filters
+          </Button>
         </Box>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={3}>
             <TextField
               fullWidth
               placeholder="Search invoices..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange('search', e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               InputProps={{
-                startAdornment: <Search size={20} style={{ marginRight: 8, color: '#666' }} />
+                startAdornment: <Search size={20} style={{ marginRight: 8, color: '#666' }} />,
+                endAdornment: isSearching && <CircularProgress size={20} />
               }}
             />
           </Grid>
@@ -423,9 +471,19 @@ const InvoicesPage = () => {
         </Grid>
       </Paper>
 
+      {/* Search Results Info */}
+      {filters.search && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <Typography variant="body2">
+            Showing {filteredTotal} result{filteredTotal !== 1 ? 's' : ''} for "{filters.search}"
+          </Typography>
+        </Alert>
+      )}
+
       {/* Invoice Table */}
       <Paper>
         <TableContainer>
+          {loading && <LinearProgress />}
           <Table>
             <TableHead>
               <TableRow>
@@ -445,7 +503,7 @@ const InvoicesPage = () => {
                 <TableCell>Invoice #</TableCell>
                 <TableCell>Customer</TableCell>
                 <TableCell>Vendor</TableCell>
-                <TableCell>Amount</TableCell>
+                <TableCell align="right">Amount</TableCell>
                 <TableCell>Date</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Actions</TableCell>
@@ -483,7 +541,7 @@ const InvoicesPage = () => {
                       {invoice.vendor_display_name || invoice.vendor_name || 'N/A'}
                     </Typography>
                   </TableCell>
-                  <TableCell>
+                  <TableCell align="right">
                     <Typography variant="body2" fontWeight="medium">
                       {formatCurrency(invoice.total_amount)}
                     </Typography>
@@ -526,7 +584,7 @@ const InvoicesPage = () => {
         <TablePagination
           rowsPerPageOptions={[5, 10, 25, 50]}
           component="div"
-          count={stats.total}
+          count={filteredTotal}
           rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={(event, newPage) => setPage(newPage)}
@@ -701,7 +759,7 @@ const InvoicesPage = () => {
                           <Grid container spacing={1} sx={{ mb: 1 }}>
                             <Grid item xs={6}>
                               <Typography variant="caption">
-                                <strong>Qty:</strong> {item.quantity} {item.unit_of_measure && `(${item.unit_of_measure})`}
+                                <strong>Qty:</strong> {formatQuantity(item.quantity, item.unit_of_measure)}
                               </Typography>
                             </Grid>
                             <Grid item xs={6}>

@@ -1,16 +1,26 @@
 {
-  "short_name": "Invoice Processing",
-  "name": "Waterfield Technologies - Invoice Processing",
+  "short_name": "Invoice System",
+  "name": "Waterfield Technologies - Invoice Processing System",
   "icons": [
     {
-      "src": "favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
+      "src": "Waterfield_W.png",
+      "sizes": "16x16",
+      "type": "image/png"
     },
     {
-      "src": "logo192.svg",
+      "src": "Waterfield_W.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "Waterfield_W.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png"
+    },
+    {
+      "src": "Waterfield_W.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ],
   "start_url": ".",

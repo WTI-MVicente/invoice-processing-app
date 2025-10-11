@@ -42,6 +42,7 @@ import {
   FilterList as FilterIcon,
   Check as CheckIcon
 } from '@mui/icons-material';
+import { formatCurrency, formatQuantity } from '../utils/formatters';
 
 const PromptsPage = () => {
   const location = useLocation();
@@ -278,12 +279,7 @@ const PromptsPage = () => {
     return '📝';
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount || 0);
-  };
+  // formatCurrency now imported from utils/formatters.js
 
   const resetForm = () => {
     setFormData({
@@ -1447,7 +1443,7 @@ const PromptsPage = () => {
                           {(testResults.extracted_data.line_items || []).map((item, index) => (
                             <TableRow key={index}>
                               <TableCell>{item.description || 'N/A'}</TableCell>
-                              <TableCell align="right">{item.quantity || 0}</TableCell>
+                              <TableCell align="right">{formatQuantity(item.quantity || 0)}</TableCell>
                               <TableCell align="right">{formatCurrency(item.unit_price)}</TableCell>
                               <TableCell align="right">{formatCurrency(item.total_amount)}</TableCell>
                             </TableRow>

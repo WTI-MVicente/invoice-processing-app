@@ -4,6 +4,58 @@ const pdf = require('pdf-parse');
 const { Pool } = require('pg');
 const claudeService = require('./claudeService');
 
+/**
+ * Translate technical database errors into user-friendly messages
+ * @param {Error} error - The error object from database/processing
+ * @returns {string} User-friendly error message
+ */
+function translateErrorMessage(error) {
+  // Handle PostgreSQL unique constraint violations
+  if (error.code === '23505') {
+    if (error.constraint === 'invoices_invoice_number_vendor_id_key') {
+      const match = error.detail?.match(/Key \(invoice_number, vendor_id\)=\(([^,]+), [^)]+\)/);
+      const invoiceNumber = match ? match[1] : 'this invoice';
+      return `Duplicate invoice detected: Invoice number "${invoiceNumber}" already exists for this vendor. Please check if this invoice was already processed.`;
+    }
+    return 'This record already exists in the system. Please check for duplicates.';
+  }
+  
+  // Handle transaction aborted errors (usually follow other errors)
+  if (error.code === '25P02') {
+    return 'Processing was interrupted due to a previous error. Please check the batch details for specific file errors.';
+  }
+  
+  // Handle file processing errors
+  if (error.message?.includes('Claude API')) {
+    return 'AI processing failed: Unable to extract data from this document. The file may be corrupted, password-protected, or in an unsupported format.';
+  }
+  
+  if (error.message?.includes('PDF') || error.message?.includes('pdf')) {
+    return 'PDF processing failed: Unable to read the PDF file. Please ensure the file is not corrupted or password-protected.';
+  }
+  
+  if (error.message?.includes('Invalid data structure')) {
+    return 'Data extraction failed: The document content could not be processed. Please check if this is a valid invoice document.';
+  }
+  
+  // Handle network/connection errors
+  if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+    return 'Network error: Unable to connect to processing services. Please try again later.';
+  }
+  
+  // Handle file system errors
+  if (error.code === 'ENOENT') {
+    return 'File not found: The uploaded file could not be located. Please try uploading again.';
+  }
+  
+  if (error.code === 'EACCES') {
+    return 'File access error: Unable to read the uploaded file. Please check file permissions.';
+  }
+  
+  // Return original message for debugging if no translation found
+  return error.message || 'An unexpected error occurred during processing.';
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
@@ -146,12 +198,16 @@ class BatchProcessingService {
         } catch (error) {
           console.error(`Error processing file ${file.filename}:`, error);
           
+          // Translate error message to user-friendly format
+          const userFriendlyError = translateErrorMessage(error);
+          console.log(`User-friendly error for ${file.filename}: ${userFriendlyError}`);
+          
           // Update file status to failed (commit immediately)
           await client.query(`
             UPDATE batch_files 
             SET status = 'failed', error_message = $1
             WHERE id = $2
-          `, [error.message, file.id]);
+          `, [userFriendlyError, file.id]);
           await client.query('COMMIT');
           await client.query('BEGIN');
           
@@ -160,7 +216,7 @@ class BatchProcessingService {
             fileId: file.id, 
             filename: file.filename, 
             status: 'failed',
-            error: error.message 
+            error: userFriendlyError
           });
           
           // Update active process tracking
@@ -322,12 +378,37 @@ class BatchProcessingService {
   }
 
   /**
+   * Check if invoice already exists for this vendor
+   * @param {string} invoiceNumber - Invoice number to check
+   * @param {string} vendorId - Vendor ID
+   * @param {Object} client - Database client
+   * @returns {Object|null} Existing invoice or null
+   */
+  async checkDuplicateInvoice(invoiceNumber, vendorId, client) {
+    const result = await client.query(
+      'SELECT id, invoice_number FROM invoices WHERE invoice_number = $1 AND vendor_id = $2',
+      [invoiceNumber, vendorId]
+    );
+    return result.rows.length > 0 ? result.rows[0] : null;
+  }
+
+  /**
    * Insert invoice record into database
    * @param {Object} invoiceData - Invoice data to insert
    * @param {Object} client - Database client
    * @returns {Promise<Object>} Inserted invoice record
    */
   async insertInvoice(invoiceData, client) {
+    // Check for duplicates before attempting insert (proactive approach)
+    const existingInvoice = await this.checkDuplicateInvoice(
+      invoiceData.invoice_number,
+      invoiceData.vendor_id,
+      client
+    );
+    
+    if (existingInvoice) {
+      throw new Error(`Duplicate invoice detected: Invoice number "${invoiceData.invoice_number}" already exists for this vendor. Please check if this invoice was already processed.`);
+    }
     const fields = [
       'invoice_number', 'vendor_id', 'customer_name', 'invoice_date', 'due_date',
       'issue_date', 'service_period_start', 'service_period_end', 'currency',
