@@ -9,7 +9,8 @@
       "Bash(npm install xlsx csv-writer archiver)",
       "Bash(psql:*)",
       "Bash(npm run:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm install:*)"
     ],
     "deny": []
   }

@@ -38,11 +38,13 @@ import {
   AlertTriangle,
   Trash2,
   X,
+  Download,
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
 import { formatCurrency } from '../utils/formatters';
 import InvoiceReviewDialog from '../components/InvoiceReviewDialog';
+import ExportDialog from '../components/ExportDialog';
 
 const ReviewPage = () => {
   const [invoices, setInvoices] = useState([]);
@@ -52,6 +54,7 @@ const ReviewPage = () => {
   const [error, setError] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   
   // Filters and pagination
   const [filters, setFilters] = useState({
@@ -432,15 +435,25 @@ const ReviewPage = () => {
             <Filter size={20} />
             <Typography variant="h6">Filters</Typography>
           </Box>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<X size={16} />}
-            onClick={handleClearInvoices}
-            disabled={!filters.search && filters.status === 'none' && !filters.vendor && !filters.batch && filters.dateRange === 'all'}
-          >
-            Clear Filters
-          </Button>
+          <Box display="flex" gap={1}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Download size={16} />}
+              onClick={() => setExportDialogOpen(true)}
+            >
+              Export Results
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<X size={16} />}
+              onClick={handleClearInvoices}
+              disabled={!filters.search && filters.status === 'none' && !filters.vendor && !filters.batch && filters.dateRange === 'all'}
+            >
+              Clear Filters
+            </Button>
+          </Box>
         </Box>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={2.4}>
@@ -665,6 +678,13 @@ const ReviewPage = () => {
           const hasPrev = getPreviousPendingInvoice() !== null;
           return hasPrev;
         })()}
+      />
+
+      {/* Export Dialog */}
+      <ExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        appliedFilters={filters}
       />
     </Box>
   );

@@ -43,10 +43,12 @@ import {
   Trash2,
   Database,
   X,
+  Download,
 } from 'lucide-react';
 import axios from 'axios';
 import { format, parseISO } from 'date-fns';
 import { formatCurrency, formatQuantity } from '../utils/formatters';
+import ExportDialog from '../components/ExportDialog';
 
 const InvoicesPage = () => {
   const [invoices, setInvoices] = useState([]);
@@ -59,6 +61,7 @@ const InvoicesPage = () => {
   const [invoiceToDelete, setInvoiceToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [selectedInvoices, setSelectedInvoices] = useState(new Set());
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   // Filters and pagination
   const [filters, setFilters] = useState({
@@ -317,16 +320,25 @@ const InvoicesPage = () => {
             Invoices
           </Typography>
         </Box>
-        {selectedInvoices.size > 0 && (
+        <Box display="flex" alignItems="center" gap={2}>
           <Button
-            variant="contained"
-            color="error"
-            startIcon={<Trash2 size={16} />}
-            onClick={() => setDeleteDialogOpen(true)}
+            variant="outlined"
+            startIcon={<Download size={16} />}
+            onClick={() => setExportDialogOpen(true)}
           >
-            Delete Selected ({selectedInvoices.size})
+            Export Data
           </Button>
-        )}
+          {selectedInvoices.size > 0 && (
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<Trash2 size={16} />}
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              Delete Selected ({selectedInvoices.size})
+            </Button>
+          )}
+        </Box>
       </Box>
 
       {error && (
@@ -853,6 +865,13 @@ const InvoicesPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Export Dialog */}
+      <ExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        appliedFilters={filters}
+      />
     </Box>
   );
 };
