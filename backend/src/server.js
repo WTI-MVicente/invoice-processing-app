@@ -62,7 +62,7 @@ app.use('/api/batches', require('./routes/batches'));
 app.use('/api/test', require('./routes/test'));
 // app.use('/api/customers', require('./routes/customers'));
 app.use('/api/prompts', require('./routes/prompts'));
-// app.use('/api/export', require('./routes/export'));
+app.use('/api/exports', require('./routes/exports'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
