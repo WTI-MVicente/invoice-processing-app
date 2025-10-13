@@ -27,31 +27,28 @@ class ExportService {
     try {
       console.log(`🚀 Starting ${format.toUpperCase()} export with template: ${template.name}`);
       
-      // Build and execute queries
-      const invoiceData = await this.buildInvoiceQuery(filters, template.invoice_fields);
-      const invoiceIds = invoiceData.map(invoice => invoice.id);
-      const lineItemData = await this.buildLineItemQuery(invoiceIds, template.line_item_fields);
-
-      console.log(`📊 Found ${invoiceData.length} invoices, ${lineItemData.length} line items`);
-
-      // Generate export based on format
+      // Get estimated count for performance decision
+      const estimatedCount = await this.getEstimatedInvoiceCount(filters);
+      console.log(`📊 Estimated invoice count: ${estimatedCount}`);
+      
+      // Choose processing strategy based on dataset size
+      const useStreamingApproach = estimatedCount > 1000;
+      
       let exportResult;
-      if (format === 'xlsx') {
-        exportResult = await this.generateXLSXWorkbook(invoiceData, lineItemData, template);
-      } else if (format === 'csv') {
-        exportResult = await this.generateDualCSV(invoiceData, lineItemData, template);
+      if (useStreamingApproach) {
+        console.log('📊 Large dataset detected - using streaming approach');
+        exportResult = await this.generateStreamingExport(filters, template, format);
       } else {
-        throw new Error(`Unsupported export format: ${format}`);
+        console.log('📊 Standard dataset - using memory approach');
+        exportResult = await this.generateStandardExport(filters, template, format);
       }
 
       // Log export activity
       const processingTime = Date.now() - startTime;
-      await this.logExportActivity(template, format, invoiceData.length, lineItemData.length, exportResult.fileSize, filters, processingTime);
+      await this.logExportActivity(template, format, exportResult.invoiceCount, exportResult.lineItemCount, exportResult.fileSize, filters, processingTime);
 
       return {
         ...exportResult,
-        invoiceCount: invoiceData.length,
-        lineItemCount: lineItemData.length,
         processingTime
       };
 
@@ -59,6 +56,144 @@ class ExportService {
       console.error('❌ Export generation failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Standard export for smaller datasets (< 1000 invoices)
+   */
+  async generateStandardExport(filters, template, format) {
+    // Build and execute queries
+    const invoiceData = await this.buildInvoiceQuery(filters, template.invoice_fields);
+    const invoiceIds = invoiceData.map(invoice => invoice.id);
+    const lineItemData = await this.buildLineItemQuery(invoiceIds, template.line_item_fields);
+
+    console.log(`📊 Found ${invoiceData.length} invoices, ${lineItemData.length} line items`);
+
+    // Generate export based on format
+    let exportResult;
+    if (format === 'xlsx') {
+      exportResult = await this.generateXLSXWorkbook(invoiceData, lineItemData, template);
+    } else if (format === 'csv') {
+      exportResult = await this.generateDualCSV(invoiceData, lineItemData, template);
+    } else {
+      throw new Error(`Unsupported export format: ${format}`);
+    }
+
+    return {
+      ...exportResult,
+      invoiceCount: invoiceData.length,
+      lineItemCount: lineItemData.length
+    };
+  }
+
+  /**
+   * Streaming export for large datasets (>= 1000 invoices)
+   */
+  async generateStreamingExport(filters, template, format) {
+    const chunkSize = 500; // Process in chunks of 500 invoices
+    let totalInvoices = 0;
+    let totalLineItems = 0;
+    
+    // Get total count first
+    const totalCount = await this.getActualInvoiceCount(filters);
+    console.log(`📊 Processing ${totalCount} invoices in chunks of ${chunkSize}`);
+    
+    if (format === 'xlsx') {
+      return await this.generateStreamingXLSX(filters, template, chunkSize, totalCount);
+    } else if (format === 'csv') {
+      return await this.generateStreamingCSV(filters, template, chunkSize, totalCount);
+    } else {
+      throw new Error(`Unsupported export format: ${format}`);
+    }
+  }
+
+  /**
+   * Get estimated invoice count for performance decisions
+   */
+  async getEstimatedInvoiceCount(filters) {
+    try {
+      const countQuery = `
+        SELECT COUNT(DISTINCT i.id) as count
+        FROM invoices i
+        LEFT JOIN vendors v ON i.vendor_id = v.id
+        LEFT JOIN customers c ON i.customer_id = c.id
+        LEFT JOIN batch_files bf ON i.id = bf.invoice_id
+        LEFT JOIN processing_batches pb ON bf.batch_id = pb.id
+        ${this.buildWhereClause(filters)}
+      `;
+      
+      const { whereClause, params } = this.buildFilterParams(filters);
+      const result = await query(countQuery.replace('${this.buildWhereClause(filters)}', whereClause), params);
+      
+      return parseInt(result.rows[0].count) || 0;
+    } catch (error) {
+      console.warn('Failed to get estimated count, defaulting to standard approach:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get actual invoice count
+   */
+  async getActualInvoiceCount(filters) {
+    return await this.getEstimatedInvoiceCount(filters);
+  }
+
+  /**
+   * Build filter parameters for reuse
+   */
+  buildFilterParams(filters) {
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    let paramCount = 1;
+
+    if (filters.vendor_id) {
+      whereClause += ` AND i.vendor_id = $${paramCount}`;
+      params.push(filters.vendor_id);
+      paramCount++;
+    }
+
+    if (filters.customer_id) {
+      whereClause += ` AND i.customer_id = $${paramCount}`;
+      params.push(filters.customer_id);
+      paramCount++;
+    }
+
+    if (filters.status) {
+      whereClause += ` AND i.processing_status = $${paramCount}`;
+      params.push(filters.status);
+      paramCount++;
+    }
+
+    if (filters.batch_name) {
+      whereClause += ` AND pb.name = $${paramCount}`;
+      params.push(filters.batch_name);
+      paramCount++;
+    }
+
+    if (filters.search) {
+      whereClause += ` AND (
+        i.invoice_number ILIKE $${paramCount} OR 
+        COALESCE(c.name, i.customer_name) ILIKE $${paramCount} OR 
+        i.purchase_order_number ILIKE $${paramCount}
+      )`;
+      params.push(`%${filters.search}%`);
+      paramCount++;
+    }
+
+    if (filters.start_date) {
+      whereClause += ` AND i.invoice_date >= $${paramCount}`;
+      params.push(filters.start_date);
+      paramCount++;
+    }
+
+    if (filters.end_date) {
+      whereClause += ` AND i.invoice_date <= $${paramCount}`;
+      params.push(filters.end_date);
+      paramCount++;
+    }
+
+    return { whereClause, params };
   }
 
   /**
@@ -391,13 +526,17 @@ class ExportService {
   /**
    * Log export activity for analytics and auditing
    */
-  async logExportActivity(template, format, invoiceCount, lineItemCount, fileSize, filters, processingTime) {
+  async logExportActivity(template, format, invoiceCount, lineItemCount, fileSize, filters, processingTime, success = true, errorMessage = null) {
     try {
       const logQuery = `
         INSERT INTO export_logs 
-        (template_id, export_format, invoice_count, line_item_count, file_size, filters_applied, processing_time_ms)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        (template_id, export_format, invoice_count, line_item_count, file_size, filters_applied, processing_time_ms, success, error_message, user_agent, ip_address)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       `;
+      
+      // Extract additional context (would be passed from route handler)
+      const userAgent = this.currentRequest?.get('user-agent') || 'Unknown';
+      const ipAddress = this.currentRequest?.ip || 'Unknown';
       
       await query(logQuery, [
         template.id,
@@ -405,15 +544,58 @@ class ExportService {
         invoiceCount,
         lineItemCount,
         fileSize,
-        JSON.stringify(filters),
-        processingTime
+        JSON.stringify({
+          ...filters,
+          fieldCounts: {
+            invoiceFields: template.invoice_fields?.length || 0,
+            lineItemFields: template.line_item_fields?.length || 0
+          }
+        }),
+        processingTime,
+        success,
+        errorMessage,
+        userAgent,
+        ipAddress
       ]);
       
-      console.log(`📝 Export activity logged: ${invoiceCount} invoices, ${lineItemCount} line items`);
+      const statusText = success ? 'completed' : 'failed';
+      console.log(`📝 Export activity logged (${statusText}): ${invoiceCount} invoices, ${lineItemCount} line items, ${processingTime}ms`);
+      
+      // Update template usage analytics
+      if (success) {
+        await this.updateTemplateAnalytics(template.id);
+      }
+      
     } catch (error) {
       console.error('⚠️ Failed to log export activity:', error);
       // Don't throw - logging failure shouldn't break export
     }
+  }
+
+  /**
+   * Update template usage analytics
+   */
+  async updateTemplateAnalytics(templateId) {
+    try {
+      const analyticsQuery = `
+        UPDATE export_templates 
+        SET 
+          last_used_at = CURRENT_TIMESTAMP,
+          usage_count = COALESCE(usage_count, 0) + 1
+        WHERE id = $1
+      `;
+      
+      await query(analyticsQuery, [templateId]);
+    } catch (error) {
+      console.error('⚠️ Failed to update template analytics:', error);
+    }
+  }
+
+  /**
+   * Set current request context for logging
+   */
+  setRequestContext(req) {
+    this.currentRequest = req;
   }
 
   /**

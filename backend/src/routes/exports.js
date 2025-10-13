@@ -9,27 +9,56 @@ const exportService = require('../services/exportService');
 // GET /api/exports/templates - List all export templates
 router.get('/templates', authenticateToken, async (req, res) => {
   try {
-    const templatesQuery = `
-      SELECT 
-        id,
-        name,
-        description,
-        user_id,
-        is_public,
-        invoice_fields,
-        line_item_fields,
-        created_at,
-        updated_at
-      FROM export_templates
-      WHERE is_public = true OR user_id = $1
-      ORDER BY is_public DESC, name ASC
-    `;
+    const { include_admin = false } = req.query;
     
-    const result = await query(templatesQuery, [req.user?.id]);
+    let templatesQuery;
+    let queryParams;
+    
+    // For admin users, optionally include all templates for management
+    if (include_admin === 'true' && req.user?.role === 'admin') {
+      templatesQuery = `
+        SELECT 
+          id,
+          name,
+          description,
+          user_id,
+          is_public,
+          invoice_fields,
+          line_item_fields,
+          created_at,
+          updated_at,
+          (SELECT COUNT(*) FROM export_logs WHERE template_id = et.id) as usage_count
+        FROM export_templates et
+        ORDER BY is_public DESC, usage_count DESC, name ASC
+      `;
+      queryParams = [];
+    } else {
+      // Regular users see only public templates and their own
+      templatesQuery = `
+        SELECT 
+          id,
+          name,
+          description,
+          user_id,
+          is_public,
+          invoice_fields,
+          line_item_fields,
+          created_at,
+          updated_at,
+          (SELECT COUNT(*) FROM export_logs WHERE template_id = et.id) as usage_count
+        FROM export_templates et
+        WHERE is_public = true OR user_id = $1
+        ORDER BY is_public DESC, usage_count DESC, name ASC
+      `;
+      queryParams = [req.user?.id];
+    }
+    
+    const result = await query(templatesQuery, queryParams);
     
     res.json({
       success: true,
-      templates: result.rows
+      templates: result.rows,
+      isAdmin: req.user?.role === 'admin'
     });
   } catch (error) {
     console.error('Failed to fetch export templates:', error);
@@ -156,17 +185,38 @@ router.delete('/templates/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if template exists and user has permission (can't delete public templates unless admin)
-    const checkQuery = `
-      SELECT * FROM export_templates 
-      WHERE id = $1 AND user_id = $2
-    `;
-    const existingTemplate = await query(checkQuery, [id, req.user.id]);
+    // Check if template exists and user has permission
+    let checkQuery;
+    let queryParams;
+    
+    if (req.user?.role === 'admin') {
+      // Admins can delete any template
+      checkQuery = `SELECT * FROM export_templates WHERE id = $1`;
+      queryParams = [id];
+    } else {
+      // Regular users can only delete their own templates
+      checkQuery = `SELECT * FROM export_templates WHERE id = $1 AND user_id = $2`;
+      queryParams = [id, req.user.id];
+    }
+    
+    const existingTemplate = await query(checkQuery, queryParams);
 
     if (existingTemplate.rows.length === 0) {
       return res.status(404).json({
         success: false,
         error: 'Template not found or access denied'
+      });
+    }
+
+    // Check if template is being used (prevent deletion of heavily used templates)
+    const usageQuery = `SELECT COUNT(*) as usage_count FROM export_logs WHERE template_id = $1`;
+    const usageResult = await query(usageQuery, [id]);
+    const usageCount = parseInt(usageResult.rows[0].usage_count);
+
+    if (usageCount > 50 && req.user?.role !== 'admin') {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete template with high usage. Contact admin for assistance.'
       });
     }
 

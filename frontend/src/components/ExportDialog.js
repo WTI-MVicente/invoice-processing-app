@@ -218,14 +218,61 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
   // Generate and download export
   const handleExport = async () => {
     try {
+      // Enhanced validation
       if (!selectedTemplate) {
-        setError('Please select a template');
+        setError('Please select a template before exporting');
+        return;
+      }
+
+      if (selectedInvoiceFields.length === 0) {
+        setError('Please select at least one invoice field');
+        setActiveTab(0); // Switch to invoice fields tab
+        return;
+      }
+
+      if (selectedLineItemFields.length === 0) {
+        setError('Please select at least one line item field');
+        setActiveTab(1); // Switch to line items tab
+        return;
+      }
+
+      // Check for required fields
+      const hasInvoiceNumber = selectedInvoiceFields.some(field => field.key === 'invoice_number');
+      const hasLineItemInvoiceNumber = selectedLineItemFields.some(field => field.key === 'invoice_number');
+      
+      if (!hasInvoiceNumber || !hasLineItemInvoiceNumber) {
+        setError('Invoice Number field is required in both invoice and line item selections for data linking');
         return;
       }
 
       setIsExporting(true);
-      setExportProgress('Preparing export...');
+      setExportProgress('Validating export configuration...');
       setError('');
+
+      // Get estimated count for user feedback
+      try {
+        const countResponse = await axios.get('/api/invoices', {
+          params: { 
+            ...appliedFilters,
+            limit: 1 // Just get count, not data
+          }
+        });
+        const estimatedCount = countResponse.data.total || 0;
+        
+        if (estimatedCount === 0) {
+          setError('No invoices found matching current filters. Please adjust your search criteria.');
+          return;
+        }
+
+        if (estimatedCount > 5000) {
+          setExportProgress(`Processing large dataset (${estimatedCount.toLocaleString()} invoices)...`);
+        } else {
+          setExportProgress(`Processing ${estimatedCount.toLocaleString()} invoice${estimatedCount !== 1 ? 's' : ''}...`);
+        }
+      } catch (countError) {
+        console.warn('Could not get invoice count:', countError);
+        setExportProgress('Preparing export...');
+      }
 
       const exportData = {
         template_id: selectedTemplate,
@@ -233,29 +280,58 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
         format: exportFormat
       };
 
-      setExportProgress(`Generating ${exportFormat.toUpperCase()} export...`);
+      setExportProgress(`Generating ${exportFormat.toUpperCase()} ${exportFormat === 'xlsx' ? 'workbook' : 'archive'}...`);
 
       const response = await axios.post('/api/exports/generate', exportData, {
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: 300000, // 5 minute timeout for large exports
+        onDownloadProgress: (progressEvent) => {
+          if (progressEvent.lengthComputable) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setExportProgress(`Downloading... ${percentCompleted}%`);
+          }
+        }
       });
 
-      // Create filename
+      // Create meaningful filename
       const template = templates.find(t => t.id === selectedTemplate);
       const timestamp = new Date().toISOString().split('T')[0];
-      const filename = `${template?.name.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.${exportFormat === 'xlsx' ? 'xlsx' : 'zip'}`;
+      const filterText = appliedFilters.search ? `_${appliedFilters.search.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+      const filename = `${template?.name.replace(/[^a-zA-Z0-9]/g, '_')}${filterText}_${timestamp}.${exportFormat === 'xlsx' ? 'xlsx' : 'zip'}`;
 
-      // Download file
-      setExportProgress('Download ready!');
+      // Download file with user feedback
+      setExportProgress('Starting download...');
       saveAs(response.data, filename);
       
-      setSuccess(`Export completed: ${filename}`);
+      // Enhanced success message
+      const fileSize = response.data.size;
+      const sizeText = fileSize ? ` (${(fileSize / 1024 / 1024).toFixed(1)} MB)` : '';
+      const formatText = exportFormat === 'xlsx' ? 'Excel workbook with 2 sheets' : 'ZIP archive with 2 CSV files';
+      
+      setSuccess(`✅ Export completed!\nFile: ${filename}${sizeText}\nFormat: ${formatText}`);
+      
+      // Auto-close after longer delay for user to see success
       setTimeout(() => {
         onClose();
-      }, 2000);
+      }, 4000);
 
     } catch (error) {
       console.error('Export failed:', error);
-      setError(error.response?.data?.error || 'Export generation failed');
+      
+      // Enhanced error handling
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        setError('Export timed out. This usually happens with very large datasets. Please try filtering your data or contact support.');
+      } else if (error.response?.status === 413) {
+        setError('Dataset too large for export. Please apply more specific filters to reduce the amount of data.');
+      } else if (error.response?.status === 503) {
+        setError('Export service temporarily unavailable. Please try again in a few moments.');
+      } else if (error.response?.data?.error) {
+        setError(`Export failed: ${error.response.data.error}`);
+      } else if (error.message) {
+        setError(`Export failed: ${error.message}`);
+      } else {
+        setError('Export generation failed. Please try again or contact support if the problem persists.');
+      }
     } finally {
       setIsExporting(false);
       setExportProgress('');
