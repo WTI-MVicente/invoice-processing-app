@@ -23,29 +23,22 @@ import {
   FormControlLabel,
   Checkbox,
   IconButton,
-  Tooltip,
   Paper,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
 } from '@mui/material';
 import {
   Download,
   FileText,
   Table,
-  Settings,
   Save,
   Trash2,
-  Eye,
   CheckCircle,
   AlertTriangle,
   X,
   Plus,
 } from 'lucide-react';
-import Select as ReactSelect from 'react-select';
 import { saveAs } from 'file-saver';
 import axios from 'axios';
+import DualPaneFieldSelector from './DualPaneFieldSelector';
 
 const TabPanel = ({ children, value, index, ...other }) => (
   <div
@@ -82,6 +75,7 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showTemplateForm, setShowTemplateForm] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -91,7 +85,8 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
       setError('');
       setSuccess('');
     }
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]); // loadTemplates and loadAvailableFields are stable functions
 
   // Load templates from backend
   const loadTemplates = async () => {
@@ -137,31 +132,54 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
 
   // Handle template selection change
   const handleTemplateChange = (templateId) => {
+    // Warn if there are unsaved changes
+    if (hasUnsavedChanges) {
+      const confirmed = window.confirm('You have unsaved changes to the current template. Are you sure you want to switch templates? Your changes will be lost.');
+      if (!confirmed) {
+        return;
+      }
+    }
+    
     setSelectedTemplate(templateId);
+    setHasUnsavedChanges(false);
     const template = templates.find(t => t.id === templateId);
     if (template) {
       loadTemplate(template);
     }
   };
 
-  // Convert fields for react-select
-  const formatFieldsForSelect = (fields) => 
-    fields.map(field => ({
-      value: field.key,
-      label: field.label,
-      data: field
-    }));
 
-  // Handle field selection changes
-  const handleInvoiceFieldsChange = (selectedOptions) => {
-    const fields = selectedOptions.map(option => option.data);
-    setSelectedInvoiceFields(fields);
+  // Handle field selection changes (simplified for dual-pane interface)
+  const handleInvoiceFieldsChange = (newSelectedFields) => {
+    setSelectedInvoiceFields(newSelectedFields);
   };
 
-  const handleLineItemFieldsChange = (selectedOptions) => {
-    const fields = selectedOptions.map(option => option.data);
-    setSelectedLineItemFields(fields);
+  const handleLineItemFieldsChange = (newSelectedFields) => {
+    setSelectedLineItemFields(newSelectedFields);
   };
+
+  // Check for unsaved changes when fields change
+  useEffect(() => {
+    if (!selectedTemplate) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    const currentTemplate = templates.find(t => t.id === selectedTemplate);
+    if (!currentTemplate) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    // Compare field selections
+    const invoiceFieldsChanged = JSON.stringify(selectedInvoiceFields.map(f => f.key).sort()) !== 
+                                JSON.stringify((currentTemplate.invoice_fields || []).map(f => f.key).sort());
+    
+    const lineItemFieldsChanged = JSON.stringify(selectedLineItemFields.map(f => f.key).sort()) !== 
+                                 JSON.stringify((currentTemplate.line_item_fields || []).map(f => f.key).sort());
+
+    setHasUnsavedChanges(invoiceFieldsChanged || lineItemFieldsChanged);
+  }, [selectedInvoiceFields, selectedLineItemFields, selectedTemplate, templates]);
 
   // Save current configuration as new template
   const handleSaveTemplate = async () => {
@@ -195,6 +213,59 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
     } catch (error) {
       console.error('Failed to save template:', error);
       setError('Failed to save template');
+    }
+  };
+
+  // Update existing template with current field selections
+  const handleUpdateTemplate = async () => {
+    if (!selectedTemplate) {
+      setError('No template selected');
+      return;
+    }
+    
+    try {
+      if (selectedInvoiceFields.length === 0 || selectedLineItemFields.length === 0) {
+        setError('Both invoice and line item fields are required');
+        return;
+      }
+
+      const currentTemplate = templates.find(t => t.id === selectedTemplate);
+      if (!currentTemplate) {
+        setError('Template not found in current templates list');
+        return;
+      }
+
+      const templateData = {
+        name: currentTemplate.name,
+        description: currentTemplate.description,
+        invoice_fields: selectedInvoiceFields,
+        line_item_fields: selectedLineItemFields,
+        is_public: currentTemplate.is_public
+      };
+
+      const response = await axios.put(`/api/exports/templates/${selectedTemplate}`, templateData);
+      
+      if (response.data.success) {
+        setSuccess('Template updated successfully');
+        setHasUnsavedChanges(false);
+        loadTemplates();
+        // Update the current template in state to reflect changes
+        setTemplates(prev => prev.map(t => 
+          t.id === selectedTemplate ? { ...t, ...templateData } : t
+        ));
+      } else {
+        setError('Template update failed: ' + (response.data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Failed to update template:', error);
+      
+      if (error.response?.status === 404) {
+        setError('Template not found or you do not have permission to update it');
+      } else if (error.response?.data?.error) {
+        setError('Failed to update template: ' + error.response.data.error);
+      } else {
+        setError('Failed to update template: ' + (error.message || 'Unknown error'));
+      }
     }
   };
 
@@ -251,11 +322,26 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
 
       // Get estimated count for user feedback
       try {
-        const countResponse = await axios.get('/api/invoices', {
-          params: { 
-            ...appliedFilters,
-            limit: 1 // Just get count, not data
+        // Map frontend filters to API parameters
+        const apiParams = {
+          limit: 1, // Just get count, not data
+          search: appliedFilters.search,
+          status: appliedFilters.status,
+          batch_name: appliedFilters.batch_name,
+          vendor_id: appliedFilters.vendor,
+          start_date: appliedFilters.date_from ? new Date(appliedFilters.date_from).toISOString().split('T')[0] : undefined,
+          end_date: appliedFilters.date_to ? new Date(appliedFilters.date_to).toISOString().split('T')[0] : undefined,
+        };
+
+        // Remove undefined values
+        Object.keys(apiParams).forEach(key => {
+          if (apiParams[key] === undefined || apiParams[key] === '') {
+            delete apiParams[key];
           }
+        });
+
+        const countResponse = await axios.get('/api/invoices', {
+          params: apiParams
         });
         const estimatedCount = countResponse.data.total || 0;
         
@@ -274,9 +360,32 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
         setExportProgress('Preparing export...');
       }
 
+      // Map filters for backend export service
+      const mappedFilters = {
+        search: appliedFilters.search,
+        status: appliedFilters.status,
+        batch_name: appliedFilters.batch_name,
+        vendor_id: appliedFilters.vendor,
+        start_date: appliedFilters.date_from ? new Date(appliedFilters.date_from).toISOString().split('T')[0] : undefined,
+        end_date: appliedFilters.date_to ? new Date(appliedFilters.date_to).toISOString().split('T')[0] : undefined,
+      };
+
+      // Remove undefined values
+      Object.keys(mappedFilters).forEach(key => {
+        if (mappedFilters[key] === undefined || mappedFilters[key] === '') {
+          delete mappedFilters[key];
+        }
+      });
+
+      // Use current field selections instead of stored template
       const exportData = {
-        template_id: selectedTemplate,
-        filters: appliedFilters,
+        template: {
+          id: selectedTemplate,
+          name: templates.find(t => t.id === selectedTemplate)?.name || 'Custom Template',
+          invoice_fields: selectedInvoiceFields,
+          line_item_fields: selectedLineItemFields
+        },
+        filters: mappedFilters,
         format: exportFormat
       };
 
@@ -460,6 +569,18 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
                     >
                       New Template
                     </Button>
+                    {selectedTemplate && hasUnsavedChanges && (
+                      <Button
+                        variant="contained"
+                        size="small"
+                        color="primary"
+                        startIcon={<Save size={16} />}
+                        onClick={handleUpdateTemplate}
+                        sx={{ height: '56px' }}
+                      >
+                        Save Changes
+                      </Button>
+                    )}
                     {selectedTemplate && (
                       <Button
                         variant="outlined"
@@ -562,70 +683,28 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
 
               {/* Invoice Fields Tab */}
               <TabPanel value={activeTab} index={0}>
-                <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ mb: 3 }}>
                   Select Invoice-Level Fields to Export
                 </Typography>
-                <ReactSelect
-                  isMulti
-                  value={formatFieldsForSelect(selectedInvoiceFields)}
-                  onChange={handleInvoiceFieldsChange}
-                  options={formatFieldsForSelect(availableFields.invoice)}
-                  placeholder="Select invoice fields..."
-                  className="react-select-container"
-                  classNamePrefix="react-select"
+                <DualPaneFieldSelector
+                  availableFields={availableFields.invoice}
+                  selectedFields={selectedInvoiceFields}
+                  onFieldsChange={handleInvoiceFieldsChange}
+                  fieldType="Invoice"
                 />
-                {selectedInvoiceFields.length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Selected Fields:
-                    </Typography>
-                    <Box display="flex" flexWrap="wrap" gap={1}>
-                      {selectedInvoiceFields.map(field => (
-                        <Chip 
-                          key={field.key} 
-                          label={field.label}
-                          size="small"
-                          color={field.required ? "primary" : "default"}
-                          variant={field.required ? "filled" : "outlined"}
-                        />
-                      ))}
-                    </Box>
-                  </Box>
-                )}
               </TabPanel>
 
               {/* Line Item Fields Tab */}
               <TabPanel value={activeTab} index={1}>
-                <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ mb: 3 }}>
                   Select Line Item-Level Fields to Export
                 </Typography>
-                <ReactSelect
-                  isMulti
-                  value={formatFieldsForSelect(selectedLineItemFields)}
-                  onChange={handleLineItemFieldsChange}
-                  options={formatFieldsForSelect(availableFields.line_item)}
-                  placeholder="Select line item fields..."
-                  className="react-select-container"
-                  classNamePrefix="react-select"
+                <DualPaneFieldSelector
+                  availableFields={availableFields.line_item}
+                  selectedFields={selectedLineItemFields}
+                  onFieldsChange={handleLineItemFieldsChange}
+                  fieldType="Line Item"
                 />
-                {selectedLineItemFields.length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Selected Fields:
-                    </Typography>
-                    <Box display="flex" flexWrap="wrap" gap={1}>
-                      {selectedLineItemFields.map(field => (
-                        <Chip 
-                          key={field.key} 
-                          label={field.label}
-                          size="small"
-                          color={field.required ? "primary" : "default"}
-                          variant={field.required ? "filled" : "outlined"}
-                        />
-                      ))}
-                    </Box>
-                  </Box>
-                )}
               </TabPanel>
             </Paper>
           </Grid>
@@ -672,6 +751,12 @@ const ExportDialog = ({ open, onClose, appliedFilters = {} }) => {
                     <Typography variant="body2">No filters applied - all data will be exported</Typography>
                   )}
                 </Box>
+
+                {hasUnsavedChanges && (
+                  <Alert severity="warning" icon={<AlertTriangle size={16} />} sx={{ mb: 2 }}>
+                    You have unsaved changes. Click "Save Changes" to update the template, or your modifications will only apply to this export.
+                  </Alert>
+                )}
 
                 {preview.invoiceFieldCount > 0 && preview.lineItemFieldCount > 0 && (
                   <Alert severity="info" icon={<CheckCircle size={16} />}>

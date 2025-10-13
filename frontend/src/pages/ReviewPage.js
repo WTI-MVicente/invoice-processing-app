@@ -36,7 +36,6 @@ import {
   Search,
   TrendingUp,
   AlertTriangle,
-  Trash2,
   X,
   Download,
 } from 'lucide-react';

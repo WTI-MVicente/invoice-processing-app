@@ -112,6 +112,8 @@ class ExportService {
    */
   async getEstimatedInvoiceCount(filters) {
     try {
+      const { whereClause, params } = this.buildFilterParams(filters);
+      
       const countQuery = `
         SELECT COUNT(DISTINCT i.id) as count
         FROM invoices i
@@ -119,11 +121,10 @@ class ExportService {
         LEFT JOIN customers c ON i.customer_id = c.id
         LEFT JOIN batch_files bf ON i.id = bf.invoice_id
         LEFT JOIN processing_batches pb ON bf.batch_id = pb.id
-        ${this.buildWhereClause(filters)}
+        ${whereClause}
       `;
       
-      const { whereClause, params } = this.buildFilterParams(filters);
-      const result = await query(countQuery.replace('${this.buildWhereClause(filters)}', whereClause), params);
+      const result = await query(countQuery, params);
       
       return parseInt(result.rows[0].count) || 0;
     } catch (error) {
@@ -166,9 +167,13 @@ class ExportService {
     }
 
     if (filters.batch_name) {
-      whereClause += ` AND pb.name = $${paramCount}`;
-      params.push(filters.batch_name);
-      paramCount++;
+      if (filters.batch_name === 'Single Upload') {
+        whereClause += ` AND pb.id IS NULL`;
+      } else {
+        whereClause += ` AND CONCAT('Batch-', EXTRACT(YEAR FROM pb.created_at), '-', EXTRACT(MONTH FROM pb.created_at), '-', EXTRACT(DAY FROM pb.created_at), '-', RIGHT(pb.id::text, 8)) = $${paramCount}`;
+        params.push(filters.batch_name);
+        paramCount++;
+      }
     }
 
     if (filters.search) {
@@ -202,6 +207,11 @@ class ExportService {
   async buildInvoiceQuery(filters, invoiceFields) {
     const fieldKeys = invoiceFields.map(field => field.key);
     
+    // Always include 'id' for line items queries, even if not in template
+    if (!fieldKeys.includes('id')) {
+      fieldKeys.unshift('id');
+    }
+    
     // Base query - reuse existing filter logic from invoices route
     let whereClause = 'WHERE 1=1';
     const params = [];
@@ -227,9 +237,13 @@ class ExportService {
     }
 
     if (filters.batch_name) {
-      whereClause += ` AND pb.name = $${paramCount}`;
-      params.push(filters.batch_name);
-      paramCount++;
+      if (filters.batch_name === 'Single Upload') {
+        whereClause += ` AND pb.id IS NULL`;
+      } else {
+        whereClause += ` AND CONCAT('Batch-', EXTRACT(YEAR FROM pb.created_at), '-', EXTRACT(MONTH FROM pb.created_at), '-', EXTRACT(DAY FROM pb.created_at), '-', RIGHT(pb.id::text, 8)) = $${paramCount}`;
+        params.push(filters.batch_name);
+        paramCount++;
+      }
     }
 
     if (filters.search) {
@@ -265,7 +279,7 @@ class ExportService {
       LEFT JOIN batch_files bf ON i.id = bf.invoice_id
       LEFT JOIN processing_batches pb ON bf.batch_id = pb.id
       ${whereClause}
-      GROUP BY i.id, v.name, v.display_name, c.name, i.customer_name, pb.id, pb.created_at, pb.name
+      GROUP BY i.id, v.name, v.display_name, c.name, i.customer_name, pb.id, pb.created_at
       ORDER BY i.created_at DESC
     `;
 
@@ -305,35 +319,87 @@ class ExportService {
   buildSelectFields(fieldKeys, dataType) {
     const fieldMappings = {
       invoice: {
+        // Core identification
+        'id': 'i.id',
         'invoice_number': 'i.invoice_number',
-        'vendor_name': 'COALESCE(v.display_name, v.name)',
         'vendor_id': 'i.vendor_id',
-        'customer_name': 'COALESCE(c.name, i.customer_name)',
+        'vendor_name': 'COALESCE(v.display_name, v.name) AS vendor_name',
         'customer_id': 'i.customer_id',
+        'customer_name': 'COALESCE(c.name, i.customer_name) AS customer_name',
+        
+        // Dates
         'invoice_date': 'i.invoice_date',
         'due_date': 'i.due_date',
+        'issue_date': 'i.issue_date',
+        'service_period_start': 'i.service_period_start',
+        'service_period_end': 'i.service_period_end',
+        
+        // Financial totals
+        'currency': 'i.currency',
+        'amount_due': 'i.amount_due',
         'total_amount': 'i.total_amount',
-        'tax_amount': 'i.tax_amount',
+        'subtotal': 'i.subtotal',
+        'total_taxes': 'i.total_taxes',
+        'total_fees': 'i.total_fees',
+        'total_recurring': 'i.total_recurring',
+        'total_one_time': 'i.total_one_time',
+        'total_usage': 'i.total_usage',
+        
+        // Order details
+        'line_item_count': 'i.line_item_count',
+        'purchase_order_number': 'i.purchase_order_number',
+        'payment_terms': 'i.payment_terms',
+        'customer_account_number': 'i.customer_account_number',
+        'contact_email': 'i.contact_email',
+        'contact_phone': 'i.contact_phone',
+        
+        // Processing details
         'processing_status': 'i.processing_status',
         'confidence_score': 'i.confidence_score',
-        'purchase_order_number': 'i.purchase_order_number',
+        'file_type': 'i.file_type',
+        'original_filename': 'i.original_filename',
+        'processed_at': 'i.processed_at',
+        'approved_at': 'i.approved_at',
+        'is_duplicate': 'i.is_duplicate',
+        
+        // Timestamps & batch
         'created_at': 'i.created_at',
         'updated_at': 'i.updated_at',
-        'batch_name': 'pb.name as batch_name',
-        'id': 'i.id'
+        'batch_name': 'CASE WHEN pb.id IS NOT NULL THEN CONCAT(\'Batch-\', EXTRACT(YEAR FROM pb.created_at), \'-\', EXTRACT(MONTH FROM pb.created_at), \'-\', EXTRACT(DAY FROM pb.created_at), \'-\', RIGHT(pb.id::text, 8)) ELSE \'Single Upload\' END AS batch_name'
       },
       line_item: {
+        // Core identification
+        'id': 'li.id',
+        'invoice_id': 'li.invoice_id',
         'invoice_number': 'i.invoice_number',
         'line_number': 'li.line_number',
+        
+        // Product details
         'description': 'li.description',
-        'quantity': 'li.quantity',
-        'unit_price': 'li.unit_price',
-        'line_total': 'li.line_total',
-        'product_code': 'li.product_code',
         'category': 'li.category',
-        'notes': 'li.notes',
-        'invoice_id': 'li.invoice_id',
-        'id': 'li.id'
+        'charge_type': 'li.charge_type',
+        'sku': 'li.sku',
+        'product_code': 'li.product_code',
+        
+        // Service periods
+        'service_period_start': 'li.service_period_start',
+        'service_period_end': 'li.service_period_end',
+        
+        // Quantities (DECIMAL(12,4) precision)
+        'quantity': 'li.quantity',
+        'unit_of_measure': 'li.unit_of_measure',
+        'unit_price': 'li.unit_price',
+        
+        // Financial amounts (DECIMAL(12,2) precision)
+        'subtotal': 'li.subtotal',
+        'tax_amount': 'li.tax_amount',
+        'fee_amount': 'li.fee_amount',
+        'total_amount': 'li.total_amount',
+        'line_total': 'li.total_amount',
+        
+        // Timestamps
+        'created_at': 'li.created_at',
+        'updated_at': 'li.updated_at'
       }
     };
 
@@ -509,9 +575,11 @@ class ExportService {
 
     switch (type) {
       case 'currency':
-        return typeof value === 'number' ? value.toFixed(2) : value;
+        const numValue = typeof value === 'number' ? value : parseFloat(value);
+        return !isNaN(numValue) ? numValue : 0;
       case 'number':
-        return typeof value === 'number' ? value : parseFloat(value) || 0;
+        const numVal = typeof value === 'number' ? value : parseFloat(value);
+        return !isNaN(numVal) ? numVal : 0;
       case 'percentage':
         return typeof value === 'number' ? (value * 100).toFixed(1) + '%' : value;
       case 'date':
@@ -536,7 +604,7 @@ class ExportService {
       
       // Extract additional context (would be passed from route handler)
       const userAgent = this.currentRequest?.get('user-agent') || 'Unknown';
-      const ipAddress = this.currentRequest?.ip || 'Unknown';
+      const ipAddress = this.currentRequest?.ip || '127.0.0.1';
       
       await query(logQuery, [
         template.id,

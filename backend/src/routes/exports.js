@@ -137,9 +137,10 @@ router.put('/templates/:id', authenticateToken, async (req, res) => {
     const { name, description, invoice_fields, line_item_fields, is_public = false } = req.body;
 
     // Check if template exists and user has permission
+    // Users can update templates they own OR public templates (system templates have user_id = NULL)
     const checkQuery = `
       SELECT * FROM export_templates 
-      WHERE id = $1 AND (user_id = $2 OR is_public = false)
+      WHERE id = $1 AND (user_id = $2 OR (user_id IS NULL AND is_public = true))
     `;
     const existingTemplate = await query(checkQuery, [id, req.user.id]);
 
@@ -241,30 +242,83 @@ router.get('/fields', authenticateToken, async (req, res) => {
   try {
     const availableFields = {
       invoice: [
+        // Core identification
         { key: 'invoice_number', label: 'Invoice #', type: 'string', width: 15, required: true },
+        { key: 'vendor_id', label: 'Vendor ID', type: 'string', width: 20 },
         { key: 'vendor_name', label: 'Vendor Name', type: 'string', width: 25 },
+        { key: 'customer_id', label: 'Customer ID', type: 'string', width: 20 },
         { key: 'customer_name', label: 'Customer Name', type: 'string', width: 25 },
+        { key: 'customer_account_number', label: 'Account Number', type: 'string', width: 15 },
+        
+        // Dates
         { key: 'invoice_date', label: 'Invoice Date', type: 'date', width: 12 },
         { key: 'due_date', label: 'Due Date', type: 'date', width: 12 },
+        { key: 'issue_date', label: 'Issue Date', type: 'date', width: 12 },
+        { key: 'service_period_start', label: 'Service Start', type: 'date', width: 12 },
+        { key: 'service_period_end', label: 'Service End', type: 'date', width: 12 },
+        
+        // Financial totals
+        { key: 'currency', label: 'Currency', type: 'string', width: 8 },
+        { key: 'amount_due', label: 'Amount Due', type: 'currency', width: 12 },
         { key: 'total_amount', label: 'Total Amount', type: 'currency', width: 12 },
-        { key: 'tax_amount', label: 'Tax Amount', type: 'currency', width: 12 },
+        { key: 'subtotal', label: 'Subtotal', type: 'currency', width: 12 },
+        { key: 'total_taxes', label: 'Total Taxes', type: 'currency', width: 12 },
+        { key: 'total_fees', label: 'Total Fees', type: 'currency', width: 12 },
+        { key: 'total_recurring', label: 'Recurring Charges', type: 'currency', width: 12 },
+        { key: 'total_one_time', label: 'One-Time Charges', type: 'currency', width: 12 },
+        { key: 'total_usage', label: 'Usage Charges', type: 'currency', width: 12 },
+        
+        // Order details
+        { key: 'line_item_count', label: 'Line Items Count', type: 'number', width: 10 },
+        { key: 'purchase_order_number', label: 'PO Number', type: 'string', width: 20 },
+        { key: 'payment_terms', label: 'Payment Terms', type: 'string', width: 15 },
+        { key: 'contact_email', label: 'Contact Email', type: 'string', width: 25 },
+        { key: 'contact_phone', label: 'Contact Phone', type: 'string', width: 15 },
+        
+        // Processing details
         { key: 'processing_status', label: 'Status', type: 'string', width: 12 },
         { key: 'confidence_score', label: 'AI Confidence', type: 'percentage', width: 12 },
-        { key: 'purchase_order_number', label: 'PO Number', type: 'string', width: 20 },
+        { key: 'file_type', label: 'File Type', type: 'string', width: 10 },
+        { key: 'original_filename', label: 'Original Filename', type: 'string', width: 30 },
+        { key: 'processed_at', label: 'Processed At', type: 'datetime', width: 18 },
+        { key: 'approved_at', label: 'Approved At', type: 'datetime', width: 18 },
+        { key: 'is_duplicate', label: 'Is Duplicate', type: 'string', width: 12 },
+        
+        // Timestamps & batch
         { key: 'created_at', label: 'Created At', type: 'datetime', width: 18 },
         { key: 'updated_at', label: 'Updated At', type: 'datetime', width: 18 },
         { key: 'batch_name', label: 'Batch Name', type: 'string', width: 20 }
       ],
       line_item: [
+        // Core identification
         { key: 'invoice_number', label: 'Invoice #', type: 'string', width: 15, required: true },
         { key: 'line_number', label: 'Line #', type: 'number', width: 8 },
+        
+        // Product details
         { key: 'description', label: 'Description', type: 'string', width: 40 },
-        { key: 'quantity', label: 'Quantity', type: 'number', width: 10 },
-        { key: 'unit_price', label: 'Unit Price', type: 'currency', width: 12 },
-        { key: 'line_total', label: 'Line Total', type: 'currency', width: 12 },
-        { key: 'product_code', label: 'Product Code', type: 'string', width: 15 },
         { key: 'category', label: 'Category', type: 'string', width: 20 },
-        { key: 'notes', label: 'Notes', type: 'string', width: 30 }
+        { key: 'charge_type', label: 'Charge Type', type: 'string', width: 15 },
+        { key: 'sku', label: 'SKU', type: 'string', width: 15 },
+        { key: 'product_code', label: 'Product Code', type: 'string', width: 15 },
+        
+        // Service periods
+        { key: 'service_period_start', label: 'Service Start', type: 'date', width: 12 },
+        { key: 'service_period_end', label: 'Service End', type: 'date', width: 12 },
+        
+        // Quantities and pricing
+        { key: 'quantity', label: 'Quantity', type: 'number', width: 10 },
+        { key: 'unit_of_measure', label: 'Unit of Measure', type: 'string', width: 10 },
+        { key: 'unit_price', label: 'Unit Price', type: 'currency', width: 12 },
+        
+        // Financial amounts
+        { key: 'subtotal', label: 'Subtotal', type: 'currency', width: 12 },
+        { key: 'tax_amount', label: 'Tax Amount', type: 'currency', width: 12 },
+        { key: 'fee_amount', label: 'Fee Amount', type: 'currency', width: 12 },
+        { key: 'total_amount', label: 'Line Total', type: 'currency', width: 12 },
+        
+        // Timestamps
+        { key: 'created_at', label: 'Created At', type: 'datetime', width: 18 },
+        { key: 'updated_at', label: 'Updated At', type: 'datetime', width: 18 }
       ]
     };
 
@@ -284,13 +338,13 @@ router.get('/fields', authenticateToken, async (req, res) => {
 // POST /api/exports/generate - Generate export file
 router.post('/generate', authenticateToken, async (req, res) => {
   try {
-    const { template_id, filters = {}, format = 'xlsx' } = req.body;
+    const { template_id, template, filters = {}, format = 'xlsx' } = req.body;
 
-    // Validate inputs
-    if (!template_id) {
+    // Validate inputs - either template_id or template object is required
+    if (!template_id && !template) {
       return res.status(400).json({
         success: false,
-        error: 'Template ID is required'
+        error: 'Either template_id or template object is required'
       });
     }
 
@@ -301,27 +355,39 @@ router.post('/generate', authenticateToken, async (req, res) => {
       });
     }
 
-    // Fetch template
-    const templateQuery = `
-      SELECT * FROM export_templates 
-      WHERE id = $1 AND (is_public = true OR user_id = $2)
-    `;
-    const templateResult = await query(templateQuery, [template_id, req.user.id]);
+    let templateToUse;
 
-    if (templateResult.rows.length === 0) {
-      return res.status(404).json({
+    if (template && template.invoice_fields && template.line_item_fields) {
+      // Use the template object directly (current field selections)
+      templateToUse = template;
+    } else if (template_id) {
+      // Fetch template from database (backward compatibility)
+      const templateQuery = `
+        SELECT * FROM export_templates 
+        WHERE id = $1 AND (is_public = true OR user_id = $2)
+      `;
+      const templateResult = await query(templateQuery, [template_id, req.user.id]);
+
+      if (templateResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Template not found or access denied'
+        });
+      }
+
+      templateToUse = templateResult.rows[0];
+    } else {
+      return res.status(400).json({
         success: false,
-        error: 'Template not found or access denied'
+        error: 'Invalid template data provided'
       });
     }
-
-    const template = templateResult.rows[0];
 
     // Clean up old temp files before generating new export
     exportService.cleanupTempFiles();
 
     // Generate export
-    const exportResult = await exportService.generateExport(filters, template, format);
+    const exportResult = await exportService.generateExport(filters, templateToUse, format);
 
     // Set appropriate headers for file download
     res.setHeader('Content-Disposition', `attachment; filename="${exportResult.filename}"`);
@@ -444,6 +510,38 @@ router.post('/validate', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Template validation failed'
+    });
+  }
+});
+
+// GET /api/exports/recent - Get recent export history for user
+router.get('/recent', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    
+    const recentQuery = `
+      SELECT 
+        el.*,
+        et.name as template_name,
+        et.description as template_description
+      FROM export_logs el
+      LEFT JOIN export_templates et ON el.template_id = et.id
+      WHERE el.user_id = $1
+      ORDER BY el.created_at DESC
+      LIMIT $2
+    `;
+
+    const result = await query(recentQuery, [req.user.id, parseInt(limit)]);
+
+    res.json({
+      success: true,
+      exports: result.rows
+    });
+  } catch (error) {
+    console.error('Failed to fetch recent exports:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch recent exports'
     });
   }
 });
