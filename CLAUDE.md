@@ -450,4 +450,81 @@ case 'currency':
 ---
 
 **Status**: Complete Export System Overhaul ✅  
-**Next**: Invoice Tag System Implementation (Planned) 📋
+
+## Production Deployment Plan
+
+### 🚀 AWS CDK Infrastructure as Code
+
+**Target Infrastructure**: Hybrid development approach maintaining local dev environment while deploying to AWS production using TypeScript CDK.
+
+**Production Stack**:
+- **Frontend**: CloudFront + S3 static hosting (React build)
+- **Backend**: AWS App Runner (containerized Express API)
+- **Database**: RDS PostgreSQL with automated backups
+- **Storage**: S3 buckets for invoices, exports, and static assets
+- **Domain**: Route 53 + SSL certificates via Certificate Manager
+- **Infrastructure**: AWS CDK (TypeScript) for Infrastructure as Code
+
+**Development Environment**: Unchanged local development (localhost:3000 + localhost:5001)
+
+### 🏗️ CDK Architecture Benefits
+- **Type Safety**: TypeScript infrastructure prevents configuration errors
+- **IDE Support**: IntelliSense, autocomplete, and refactoring for infrastructure
+- **Version Control**: Infrastructure changes tracked in Git alongside application code
+- **Reusable Components**: Create custom CDK constructs for common patterns
+- **Testing**: Unit test infrastructure code before deployment
+- **Environment Management**: Same CDK code for dev/staging/prod with different parameters
+
+### 📋 Implementation Phases
+
+**Phase 1: CDK Infrastructure Development** (Week 1)
+- Create CDK TypeScript project with stack architecture design
+- Implement database, storage, and networking CDK stacks
+- Create App Runner and CloudFront CDK constructs
+- Configure environment-based deployments (dev/prod)
+
+**Phase 2: Application Integration & CDK Testing** (Week 2)
+- Integrate application code with CDK-generated resources
+- Implement environment-based configuration (dev uses local, prod uses CDK resources)
+- Create file service abstraction for local vs S3 storage
+- CDK synthesis testing and infrastructure validation
+
+**Phase 3: CDK Deployment & Production Go-Live** (Week 3)
+- Execute `cdk deploy --all` for complete infrastructure provisioning
+- Database migration using CDK-generated connection details
+- Frontend build deployment via CDK automation scripts
+- DNS configuration and production testing with CDK-managed resources
+
+### 💰 Cost Estimation
+- **Production**: $30-70/month (App Runner + RDS + S3 + CloudFront)
+- **Development**: $0 (continues using local environment)
+- **CDK**: Free (AWS CDK itself has no cost, only resources created)
+- **Timeline**: 3 weeks implementation
+
+### 🔧 Technical Approach
+- **Zero Impact**: Local development workflow remains completely unchanged
+- **CDK Automation**: One-command infrastructure deployment (`cdk deploy --all`)
+- **Conditional Configuration**: Dev uses local resources, prod uses CDK-generated resources
+- **Auto-Deployment**: App Runner auto-deploys from GitHub via CDK configuration
+- **Infrastructure Versioning**: CDK templates versioned with application code
+
+### 📝 CDK Development Workflow
+```bash
+# Preview infrastructure changes
+cdk diff
+
+# Deploy all stacks
+cdk deploy --all
+
+# Deploy specific environments
+cdk deploy --context environment=prod
+
+# Generate CloudFormation templates
+cdk synth
+```
+
+**Documentation**: Complete CDK deployment plan available in `docs/aws-app-runner-deployment-plan.md`
+
+---
+
+**Next**: AWS Production Deployment Implementation 🚀

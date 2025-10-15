@@ -245,16 +245,49 @@ npm test                   # Run frontend tests
 
 ## 🚀 Deployment
 
-### Local Development
-- Uses local PostgreSQL
-- File storage in `backend/uploads/`
-- No AWS dependencies
+### Development Environment
+- **Database**: Local PostgreSQL instance
+- **File Storage**: Local filesystem (`backend/uploads/`)
+- **Servers**: Express (localhost:5001) + React (localhost:3000)
+- **Cost**: $0 - No cloud dependencies
 
-### Production (AWS)
-- EC2 for hosting
-- RDS PostgreSQL
-- S3 for file storage
-- Terraform for infrastructure
+### Production Environment (AWS CDK + App Runner)
+
+**Architecture**:
+- **Frontend**: CloudFront + S3 static hosting
+- **Backend**: AWS App Runner (auto-scaling containers)
+- **Database**: RDS PostgreSQL with automated backups
+- **Storage**: S3 buckets for invoices and exports
+- **Domain**: Route 53 + SSL certificates
+- **Infrastructure**: AWS CDK (TypeScript) for Infrastructure as Code
+
+**CDK Benefits**:
+- **Type Safety**: TypeScript infrastructure prevents configuration errors
+- **IDE Support**: IntelliSense and autocomplete for AWS resources
+- **Version Control**: Infrastructure changes tracked with application code
+- **One-Command Deploy**: `cdk deploy --all` provisions complete infrastructure
+- **Environment Management**: Same code for dev/staging/prod configurations
+
+**Deployment Strategy**: 
+- **Hybrid Approach**: Local development unchanged, CDK-managed AWS production
+- **Zero Dev Impact**: Continue using `npm run dev` locally
+- **Infrastructure as Code**: All AWS resources defined in TypeScript CDK
+- **Auto Deployment**: App Runner deploys from GitHub via CDK configuration
+- **Environment-Based**: Conditional configuration (local dev vs CDK prod resources)
+
+**Cost Estimate**: $30-70/month production (no development costs, CDK is free)
+
+**Implementation**: 3-week timeline with CDK Infrastructure as Code approach detailed in `docs/aws-app-runner-deployment-plan.md`
+
+### Key Benefits
+✅ **Local Development**: No changes to current workflow  
+✅ **Infrastructure as Code**: CDK TypeScript with IDE support and type safety  
+✅ **Production Ready**: Enterprise-grade AWS infrastructure  
+✅ **Auto Scaling**: Handles traffic spikes automatically  
+✅ **Zero Downtime**: Rolling deployments with health checks  
+✅ **Cost Effective**: Pay-per-use pricing model  
+✅ **Version Control**: Infrastructure changes tracked in Git  
+✅ **One-Command Deploy**: `cdk deploy --all` provisions everything
 
 ## 🤝 Contributing
 
