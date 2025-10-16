@@ -110,6 +110,12 @@ app.listen(PORT, async () => {
     await initializeDatabase();
     await testConnection();
     console.log('✅ Database initialization completed');
+    
+    // Run production database setup if needed
+    if (isProduction) {
+      const { initializeProductionDatabase } = require('./startup/database-init');
+      await initializeProductionDatabase();
+    }
   } catch (error) {
     console.error('❌ Failed to initialize database on startup:', error.message);
     process.exit(1);
