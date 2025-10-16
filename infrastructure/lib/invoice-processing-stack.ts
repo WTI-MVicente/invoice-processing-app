@@ -25,7 +25,7 @@ export class InvoiceProcessingStack extends cdk.Stack {
   public readonly frontendBucket: s3.Bucket;
   public readonly distribution: cloudfront.Distribution;
   public readonly api: apigateway.RestApi;
-  public readonly appRunnerService: apprunner.CfnService;
+  // public readonly appRunnerService: apprunner.CfnService; // To be created manually
 
   constructor(scope: Construct, id: string, props: InvoiceProcessingStackProps) {
     super(scope, id, props);
@@ -137,8 +137,9 @@ export class InvoiceProcessingStack extends cdk.Stack {
     // Create API Gateway as App Runner alternative
     this.api = this.createApiGateway(config);
 
-    // Create App Runner service for Express API
-    this.appRunnerService = this.createAppRunnerService(config);
+    // App Runner service will be created manually via AWS Console
+    // GitHub connections cannot be automated via CDK
+    // this.appRunnerService = this.createAppRunnerPlaceholder(config);
 
     // Create SSM parameters for application configuration
     this.createSSMParameters(config);
@@ -264,52 +265,12 @@ export class InvoiceProcessingStack extends cdk.Stack {
     return api;
   }
 
-  private createAppRunnerService(config: EnvironmentConfig): apprunner.CfnService {
-    // Create IAM role for App Runner service instance
-    const appRunnerInstanceRole = new iam.Role(this, 'AppRunnerInstanceRole', {
-      assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
-      description: 'IAM role for App Runner service instance',
-    });
-
-    // Create IAM role for App Runner access 
-    const appRunnerAccessRole = new iam.Role(this, 'AppRunnerAccessRole', {
-      assumedBy: new iam.ServicePrincipal('build.apprunner.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ContainerRegistryReadOnly'),
-      ],
-    });
-
-    // Grant necessary permissions to instance role
-    this.database.secret?.grantRead(appRunnerInstanceRole);
-    this.filesBucket.grantReadWrite(appRunnerInstanceRole);
-    this.exportsBucket.grantReadWrite(appRunnerInstanceRole);
-
-    // Create App Runner service using L1 construct
-    const appRunnerService = new apprunner.CfnService(this, 'InvoiceProcessingAppRunner', {
-      serviceName: `invoice-processing-${config.environment}`,
-      sourceConfiguration: {
-        autoDeploymentsEnabled: true,
-        codeRepository: {
-          repositoryUrl: 'https://github.com/WTI-MVicente/invoice-processing-app',
-          sourceCodeVersion: {
-            type: 'BRANCH',
-            value: 'main',
-          },
-          codeConfiguration: {
-            configurationSource: 'REPOSITORY',
-            // Configuration will come from apprunner.yaml in the repository
-          },
-        },
-      },
-      instanceConfiguration: {
-        cpu: '1024',  // 1 vCPU 
-        memory: '2048', // 2 GB
-        instanceRoleArn: appRunnerInstanceRole.roleArn,
-      },
-    });
-
-    return appRunnerService;
-  }
+  // App Runner service creation commented out - will be created manually
+  // GitHub connections require manual setup via AWS Console
+  
+  // private createAppRunnerPlaceholder(config: EnvironmentConfig): apprunner.CfnService {
+  //   // Implementation will be added after manual GitHub connection setup
+  // }
 
   private createSSMParameters(config: EnvironmentConfig): void {
     // Store configuration in SSM Parameter Store for easy access
@@ -343,10 +304,11 @@ export class InvoiceProcessingStack extends cdk.Stack {
       stringValue: this.api.url,
     });
 
-    new ssm.StringParameter(this, 'SSMAppRunnerUrl', {
-      parameterName: `/invoice-processing/${config.environment}/apprunner/service-url`,
-      stringValue: `https://${this.appRunnerService.attrServiceUrl}`,
-    });
+    // App Runner URL will be added manually after service creation
+    // new ssm.StringParameter(this, 'SSMAppRunnerUrl', {
+    //   parameterName: `/invoice-processing/${config.environment}/apprunner/service-url`,
+    //   stringValue: `https://${this.appRunnerService.attrServiceUrl}`,
+    // });
   }
 
   private createOutputs(): void {
@@ -398,10 +360,11 @@ export class InvoiceProcessingStack extends cdk.Stack {
       exportName: `${this.stackName}-api-gateway-url`,
     });
 
-    new cdk.CfnOutput(this, 'AppRunnerServiceUrl', {
-      value: `https://${this.appRunnerService.attrServiceUrl}`,
-      description: 'App Runner service URL for Express API',
-      exportName: `${this.stackName}-apprunner-url`,
-    });
+    // App Runner service URL will be available after manual creation
+    // new cdk.CfnOutput(this, 'AppRunnerServiceUrl', {
+    //   value: `https://${this.appRunnerService.attrServiceUrl}`,
+    //   description: 'App Runner service URL for Express API',
+    //   exportName: `${this.stackName}-apprunner-url`,
+    // });
   }
 }

@@ -10,7 +10,8 @@
       "Bash(psql:*)",
       "Bash(npm run:*)",
       "Bash(node:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(AWS_PROFILE=PowerUserAccess-324532610217 node ../scripts/migrate-rds-database.js)"
     ],
     "deny": []
   }
