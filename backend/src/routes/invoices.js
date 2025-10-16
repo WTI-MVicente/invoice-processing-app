@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { query, transaction } = require('../config/database');
 const { uploadSingle, uploadMultiple, getFileType, readFileContent, deleteFile } = require('../middleware/upload');
 const claudeService = require('../services/claudeService');
+const fileService = require('../services/fileService');
 
 const router = express.Router();
 
@@ -515,36 +516,52 @@ router.get('/:id/file', async (req, res) => {
       return res.status(404).json({ error: 'Invoice file not found' });
     }
 
-    // Check if file exists
-    const fs = require('fs');
-    if (!fs.existsSync(invoice.file_path)) {
-      console.log(`❌ File does not exist on disk: ${invoice.file_path}`);
-      return res.status(404).json({ error: 'Invoice file no longer exists on disk' });
+    // Extract filename from file_path (works for both local paths and S3 keys)
+    const filename = path.basename(invoice.file_path);
+    
+    // Check if file exists using file service
+    const fileExists = await fileService.fileExists(filename, 'invoices');
+    if (!fileExists) {
+      console.log(`❌ File does not exist: ${invoice.file_path}`);
+      return res.status(404).json({ error: 'Invoice file no longer exists' });
     }
     console.log(`✅ File exists, serving: ${invoice.original_filename}`);
 
-    // Set appropriate content type and allow iframe embedding
-    if (invoice.file_type === 'PDF') {
-      res.setHeader('Content-Type', 'application/pdf');
-    } else if (invoice.file_type === 'HTML') {
-      res.setHeader('Content-Type', 'text/html');
-    }
+    // Get environment info
+    const { environment } = fileService.getInfo();
     
-    // Allow iframe embedding from frontend
-    res.setHeader('X-Frame-Options', 'ALLOWALL');
-    res.setHeader('Content-Security-Policy', 'frame-ancestors http://localhost:3000');
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
-
-    // Set filename for download
-    res.setHeader('Content-Disposition', `inline; filename="${invoice.original_filename}"`);
-    
-    // Serve the file
-    res.sendFile(invoice.file_path, (err) => {
-      if (err) {
-        console.error('❌ Error serving file:', err);
-        res.status(500).json({ error: 'Failed to serve file' });
+    if (environment === 'production') {
+      // Production: Redirect to CloudFront URL
+      const fileUrl = fileService.getFileUrl(filename, 'invoices');
+      console.log(`🌐 Redirecting to CloudFront: ${fileUrl}`);
+      return res.redirect(fileUrl);
+    } else {
+      // Development: Serve file directly
+      const filePath = invoice.file_path;
+      
+      // Set appropriate content type and allow iframe embedding
+      if (invoice.file_type === 'PDF') {
+        res.setHeader('Content-Type', 'application/pdf');
+      } else if (invoice.file_type === 'HTML') {
+        res.setHeader('Content-Type', 'text/html');
       }
-    });
+      
+      // Allow iframe embedding from frontend
+      res.setHeader('X-Frame-Options', 'ALLOWALL');
+      res.setHeader('Content-Security-Policy', 'frame-ancestors http://localhost:3000');
+      res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+
+      // Set filename for download
+      res.setHeader('Content-Disposition', `inline; filename="${invoice.original_filename}"`);
+      
+      // Serve the file
+      res.sendFile(path.resolve(filePath), (err) => {
+        if (err) {
+          console.error('❌ Error serving file:', err);
+          res.status(500).json({ error: 'Failed to serve file' });
+        }
+      });
+    }
 
   } catch (error) {
     console.error('❌ Error serving invoice file:', error);

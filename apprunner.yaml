@@ -1,0 +1,23 @@
+version: 1.0
+runtime: nodejs18
+build:
+  commands:
+    build:
+      # Navigate to backend directory and install dependencies
+      - cd backend
+      - echo "Installing production dependencies..."
+      - npm ci --only=production
+      # Set up uploads directory (for local development compatibility)
+      - mkdir -p uploads
+      - echo "Build completed successfully"
+run:
+  # Set working directory to backend
+  runtime-version: 18.x
+  commands:
+    start:
+      # Start the Express server from backend directory
+      - cd backend && npm start
+  # Network configuration
+  network:
+    port: 5001
+    host: 0.0.0.0

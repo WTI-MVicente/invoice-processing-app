@@ -1,10 +1,65 @@
 const { Pool } = require('pg');
+const { 
+  isProduction, 
+  getCurrentEnvironment, 
+  getProductionConnectionString,
+  validateProductionEnvironment,
+  logEnvironmentInfo 
+} = require('./environment');
 
-// Database connection configuration
-let poolConfig;
+// Initialize database connection based on environment
+let pool;
 
-// Use individual config values for better password handling
-poolConfig = {
+const initializeDatabase = async () => {
+  try {
+    // Validate environment configuration
+    if (!validateProductionEnvironment()) {
+      throw new Error('Invalid production environment configuration');
+    }
+    
+    const envConfig = getCurrentEnvironment();
+    let poolConfig;
+    
+    if (isProduction) {
+      // Production: Use RDS with Secrets Manager credentials
+      const connectionString = await getProductionConnectionString();
+      poolConfig = {
+        connectionString,
+        ssl: envConfig.database.ssl,
+        ...envConfig.database.pool
+      };
+      console.log('🏭 Initializing production database connection (RDS)');
+    } else {
+      // Development: Use local PostgreSQL
+      poolConfig = {
+        connectionString: envConfig.database.connectionString,
+        ssl: envConfig.database.ssl,
+        ...envConfig.database.pool
+      };
+      console.log('🛠️  Initializing development database connection (Local)');
+    }
+    
+    pool = new Pool(poolConfig);
+    
+    // Connection event handlers
+    pool.on('connect', () => {
+      console.log('🗄️  Connected to PostgreSQL database');
+    });
+    
+    pool.on('error', (err) => {
+      console.error('❌ Database connection error:', err);
+      process.exit(-1);
+    });
+    
+    return pool;
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error.message);
+    throw error;
+  }
+};
+
+// Legacy poolConfig for backward compatibility
+let poolConfig = {
   host: 'localhost',
   port: 5432,
   user: 'postgres',
@@ -16,17 +71,17 @@ poolConfig = {
   connectionTimeoutMillis: 2000,
 };
 
-const pool = new Pool(poolConfig);
+// Initialize with legacy config for backward compatibility
+// This will be replaced by initializeDatabase() call in server.js
+pool = new Pool(poolConfig);
 
-// Connection event handlers
-pool.on('connect', () => {
-  console.log('🗄️  Connected to PostgreSQL database');
-});
-
-pool.on('error', (err) => {
-  console.error('❌ Database connection error:', err);
-  process.exit(-1);
-});
+// Get or create the database pool
+const getPool = () => {
+  if (!pool) {
+    throw new Error('Database not initialized. Call initializeDatabase() first.');
+  }
+  return pool;
+};
 
 // Test database connection
 const testConnection = async () => {
@@ -45,8 +100,9 @@ const testConnection = async () => {
 // Query helper function with error handling
 const query = async (text, params = []) => {
   const start = Date.now();
+  const currentPool = getPool();
   try {
-    const result = await pool.query(text, params);
+    const result = await currentPool.query(text, params);
     const duration = Date.now() - start;
     
     if (process.env.NODE_ENV === 'development') {
@@ -71,7 +127,8 @@ const query = async (text, params = []) => {
 
 // Transaction helper
 const transaction = async (callback) => {
-  const client = await pool.connect();
+  const currentPool = getPool();
+  const client = await currentPool.connect();
   try {
     await client.query('BEGIN');
     const result = await callback(client);
@@ -86,7 +143,9 @@ const transaction = async (callback) => {
 };
 
 module.exports = {
-  pool,
+  initializeDatabase,
+  getPool,
+  pool, // Legacy export for backward compatibility  
   query,
   transaction,
   testConnection

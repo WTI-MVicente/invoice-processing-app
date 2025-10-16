@@ -3,11 +3,19 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const { testConnection } = require('./config/database');
+const { initializeDatabase, testConnection } = require('./config/database');
+const { 
+  logEnvironmentInfo, 
+  getCurrentEnvironment,
+  isProduction 
+} = require('./config/environment');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
+
+// Get environment configuration
+const envConfig = getCurrentEnvironment();
 
 // Trust proxy for rate limiting (fixes X-Forwarded-For warnings)
 app.set('trust proxy', 1);
@@ -30,20 +38,17 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// CORS configuration
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://yourapp.com'] 
-    : ['http://localhost:3000'],
-  credentials: true
-}));
+// CORS configuration - use environment-based config
+app.use(cors(envConfig.api.cors));
 
 // Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static file serving for uploads
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Static file serving for uploads (development only)
+if (!isProduction) {
+  app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+}
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -94,14 +99,19 @@ app.use('*', (req, res) => {
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
   
-  // Test database connection
+  // Log environment configuration
+  logEnvironmentInfo();
+  
+  console.log(`🔗 Health check: ${envConfig.api.baseUrl}/api/health`);
+  
+  // Initialize database with environment-based configuration
   try {
+    await initializeDatabase();
     await testConnection();
+    console.log('✅ Database initialization completed');
   } catch (error) {
-    console.error('❌ Failed to connect to database on startup');
+    console.error('❌ Failed to initialize database on startup:', error.message);
     process.exit(1);
   }
 });
